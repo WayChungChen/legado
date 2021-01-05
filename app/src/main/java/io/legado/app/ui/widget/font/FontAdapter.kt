@@ -2,38 +2,63 @@ package io.legado.app.ui.widget.font
 
 import android.content.Context
 import android.graphics.Typeface
-import io.legado.app.R
+import android.os.Build
+import android.view.ViewGroup
 import io.legado.app.base.adapter.ItemViewHolder
-import io.legado.app.base.adapter.SimpleRecyclerAdapter
+import io.legado.app.base.adapter.RecyclerAdapter
+import io.legado.app.databinding.ItemFontBinding
+import io.legado.app.utils.DocItem
+import io.legado.app.utils.RealPathUtil
 import io.legado.app.utils.invisible
 import io.legado.app.utils.visible
-import kotlinx.android.synthetic.main.item_font.view.*
 import org.jetbrains.anko.sdk27.listeners.onClick
 import org.jetbrains.anko.toast
 import java.io.File
 
 class FontAdapter(context: Context, val callBack: CallBack) :
-    SimpleRecyclerAdapter<File>(context, R.layout.item_font) {
+    RecyclerAdapter<DocItem, ItemFontBinding>(context) {
 
-    override fun convert(holder: ItemViewHolder, item: File, payloads: MutableList<Any>) {
-        with(holder.itemView) {
-            try {
-                val typeface = Typeface.createFromFile(item)
-                tv_font.typeface = typeface
-            } catch (e: Exception) {
-                context.toast("读取${item.name}字体失败")
+    override fun getViewBinding(parent: ViewGroup): ItemFontBinding {
+        return ItemFontBinding.inflate(inflater, parent, false)
+    }
+
+    override fun convert(
+        holder: ItemViewHolder,
+        binding: ItemFontBinding,
+        item: DocItem,
+        payloads: MutableList<Any>
+    ) {
+        with(binding) {
+            kotlin.runCatching {
+                val typeface: Typeface? = if (item.isContentPath) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.contentResolver
+                            .openFileDescriptor(item.uri, "r")
+                            ?.fileDescriptor?.let {
+                                Typeface.Builder(it).build()
+                            }
+                    } else {
+                        Typeface.createFromFile(RealPathUtil.getPath(context, item.uri))
+                    }
+                } else {
+                    Typeface.createFromFile(item.uri.toString())
+                }
+                tvFont.typeface = typeface
+            }.onFailure {
+                it.printStackTrace()
+                context.toast("Read ${item.name} Error: ${it.localizedMessage}")
             }
-            tv_font.text = item.name
-            this.onClick { callBack.onClick(item) }
+            tvFont.text = item.name
+            root.onClick { callBack.onClick(item) }
             if (item.name == callBack.curFilePath.substringAfterLast(File.separator)) {
-                iv_checked.visible()
+                ivChecked.visible()
             } else {
-                iv_checked.invisible()
+                ivChecked.invisible()
             }
         }
     }
 
-    override fun registerListener(holder: ItemViewHolder) {
+    override fun registerListener(holder: ItemViewHolder, binding: ItemFontBinding) {
         holder.itemView.onClick {
             getItem(holder.layoutPosition)?.let {
                 callBack.onClick(it)
@@ -42,7 +67,7 @@ class FontAdapter(context: Context, val callBack: CallBack) :
     }
 
     interface CallBack {
-        fun onClick(file: File)
+        fun onClick(docItem: DocItem)
         val curFilePath: String
     }
 }

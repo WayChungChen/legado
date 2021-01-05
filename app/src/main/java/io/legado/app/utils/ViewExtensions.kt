@@ -1,18 +1,21 @@
 package io.legado.app.utils
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
 import android.view.View
 import android.view.View.*
-import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.RadioGroup
 import android.widget.SeekBar
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.view.menu.MenuPopupHelper
+import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.get
 import io.legado.app.App
+import java.lang.reflect.Field
 
 
 private tailrec fun getCompatActivity(context: Context?): AppCompatActivity? {
@@ -76,13 +79,6 @@ fun View.screenshot(): Bitmap? {
     }.getOrNull()
 }
 
-fun View.setMargin(left: Int, top: Int, right: Int, bottom: Int) {
-    if (layoutParams is ViewGroup.MarginLayoutParams) {
-        (layoutParams as ViewGroup.MarginLayoutParams).setMargins(left, top, right, bottom)
-        requestLayout()
-    }
-}
-
 fun SeekBar.progressAdd(int: Int) {
     progress += int
 }
@@ -107,4 +103,15 @@ fun RadioGroup.getCheckedIndex(): Int {
 
 fun RadioGroup.checkByIndex(index: Int) {
     check(get(index).id)
+}
+
+@SuppressLint("RestrictedApi")
+fun PopupMenu.show(x: Int, y: Int) {
+    kotlin.runCatching {
+        val field: Field = this.javaClass.getDeclaredField("mPopup")
+        field.isAccessible = true
+        (field.get(this) as MenuPopupHelper).show(x, y)
+    }.onFailure {
+        it.printStackTrace()
+    }
 }

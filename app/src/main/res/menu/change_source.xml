@@ -14,9 +14,20 @@
     <item
         android:id="@+id/menu_stop"
         android:title="@string/stop"
-        android:icon="@drawable/ic_stop_black_24dp"
+        android:icon="@drawable/ic_refresh_white_24dp"
         app:showAsAction="always"
         tools:ignore="AlwaysShowAction" />
+
+    <item
+        android:id="@+id/menu_source_manage"
+        android:title="@string/book_source_manage"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_load_info"
+        android:title="@string/load_info"
+        android:checkable="true"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/menu_load_toc"

@@ -3,12 +3,12 @@ package io.legado.app.ui.audio
 import android.app.Activity
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.icu.text.SimpleDateFormat
 import android.os.Build
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.SeekBar
-import androidx.lifecycle.Observer
 import com.bumptech.glide.RequestBuilder
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.bumptech.glide.request.RequestOptions.bitmapTransform
@@ -18,25 +18,26 @@ import io.legado.app.constant.EventBus
 import io.legado.app.constant.Status
 import io.legado.app.constant.Theme
 import io.legado.app.data.entities.Book
+import io.legado.app.databinding.ActivityAudioPlayBinding
 import io.legado.app.help.BlurTransformation
 import io.legado.app.help.ImageLoader
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.dialogs.noButton
-import io.legado.app.lib.dialogs.okButton
-import io.legado.app.service.AudioPlayService
 import io.legado.app.service.help.AudioPlay
 import io.legado.app.ui.book.changesource.ChangeSourceDialog
-import io.legado.app.ui.book.chapterlist.ChapterListActivity
+import io.legado.app.ui.book.toc.ChapterListActivity
+import io.legado.app.ui.widget.image.CoverImageView
+import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.*
-import kotlinx.android.synthetic.main.activity_audio_play.*
-import org.apache.commons.lang3.time.DateFormatUtils
 import org.jetbrains.anko.sdk27.listeners.onClick
 import org.jetbrains.anko.sdk27.listeners.onLongClick
 import org.jetbrains.anko.startActivityForResult
+import java.util.*
 
-
+/**
+ * 音频播放
+ */
 class AudioPlayActivity :
-    VMBaseActivity<AudioPlayViewModel>(R.layout.activity_audio_play, theme = Theme.Dark),
+    VMBaseActivity<ActivityAudioPlayBinding, AudioPlayViewModel>(toolBarTheme = Theme.Dark),
     ChangeSourceDialog.CallBack {
 
     override val viewModel: AudioPlayViewModel
@@ -44,12 +45,22 @@ class AudioPlayActivity :
 
     private var requestCodeChapter = 8461
     private var adjustProgress = false
+    private val progressTimeFormat by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            SimpleDateFormat("mm:ss", Locale.getDefault())
+        } else {
+            java.text.SimpleDateFormat("mm:ss", Locale.getDefault())
+        }
+    }
+
+    override fun getViewBinding(): ActivityAudioPlayBinding {
+        return ActivityAudioPlayBinding.inflate(layoutInflater)
+    }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        AudioPlay.titleData.observe(this, Observer { toolbar.title = it })
-        AudioPlay.coverData.observe(this, Observer { upCover(it) })
+        binding.titleBar.transparent()
+        AudioPlay.titleData.observe(this, { binding.titleBar.title = it })
+        AudioPlay.coverData.observe(this, { upCover(it) })
         viewModel.initData(intent)
         initView()
     }
@@ -69,34 +80,34 @@ class AudioPlayActivity :
     }
 
     private fun initView() {
-        fab_play_stop.onClick {
+        binding.fabPlayStop.onClick {
             playButton()
         }
-        fab_play_stop.onLongClick {
+        binding.fabPlayStop.onLongClick {
             AudioPlay.stop(this)
             true
         }
-        iv_skip_next.onClick {
+        binding.ivSkipNext.onClick {
             AudioPlay.next(this)
         }
-        iv_skip_previous.onClick {
+        binding.ivSkipPrevious.onClick {
             AudioPlay.prev(this)
         }
-        player_progress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tv_dur_time.text = DateFormatUtils.format(progress.toLong(), "mm:ss")
+        binding.playerProgress.setOnSeekBarChangeListener(object : SeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                binding.tvDurTime.text = progressTimeFormat.format(progress.toLong())
             }
 
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
                 adjustProgress = true
             }
 
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
                 adjustProgress = false
-                AudioPlay.adjustProgress(this@AudioPlayActivity, player_progress.progress)
+                AudioPlay.adjustProgress(this@AudioPlayActivity, seekBar.progress)
             }
         })
-        iv_chapter.onClick {
+        binding.ivChapter.onClick {
             AudioPlay.book?.let {
                 startActivityForResult<ChapterListActivity>(
                     requestCodeChapter,
@@ -105,31 +116,34 @@ class AudioPlayActivity :
             }
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            iv_fast_rewind.invisible()
-            iv_fast_forward.invisible()
+            binding.ivFastRewind.invisible()
+            binding.ivFastForward.invisible()
         }
-        iv_fast_forward.onClick {
+        binding.ivFastForward.onClick {
             AudioPlay.adjustSpeed(this, 0.1f)
         }
-        iv_fast_rewind.onClick {
+        binding.ivFastRewind.onClick {
             AudioPlay.adjustSpeed(this, -0.1f)
+        }
+        binding.ivTimer.onClick {
+            AudioPlay.addTimer(this)
         }
     }
 
     private fun upCover(path: String?) {
         ImageLoader.load(this, path)
-            .placeholder(R.drawable.image_cover_default)
-            .error(R.drawable.image_cover_default)
-            .into(iv_cover)
+            .placeholder(CoverImageView.defaultDrawable)
+            .error(CoverImageView.defaultDrawable)
+            .into(binding.ivCover)
         ImageLoader.load(this, path)
             .transition(DrawableTransitionOptions.withCrossFade(1500))
             .thumbnail(defaultCover())
             .apply(bitmapTransform(BlurTransformation(this, 25)))
-            .into(iv_bg)
+            .into(binding.ivBg)
     }
 
     private fun defaultCover(): RequestBuilder<Drawable> {
-        return ImageLoader.load(this, R.drawable.image_cover_default)
+        return ImageLoader.load(this, CoverImageView.defaultDrawable)
             .apply(bitmapTransform(BlurTransformation(this, 25)))
     }
 
@@ -151,11 +165,14 @@ class AudioPlayActivity :
     override fun finish() {
         AudioPlay.book?.let {
             if (!AudioPlay.inBookshelf) {
-                this.alert(title = getString(R.string.add_to_shelf)) {
+                alert(title = getString(R.string.add_to_shelf)) {
                     message = getString(R.string.check_add_bookshelf, it.name)
-                    okButton { AudioPlay.inBookshelf = true }
+                    okButton {
+                        AudioPlay.inBookshelf = true
+                        setResult(Activity.RESULT_OK)
+                    }
                     noButton { viewModel.removeFromBookshelf { super.finish() } }
-                }.show().applyTint()
+                }.show()
             } else {
                 super.finish()
             }
@@ -175,16 +192,7 @@ class AudioPlayActivity :
             when (requestCode) {
                 requestCodeChapter -> data?.getIntExtra("index", AudioPlay.durChapterIndex)?.let {
                     if (it != AudioPlay.durChapterIndex) {
-                        val isPlay = !AudioPlayService.pause
-                        AudioPlay.pause(this)
-                        AudioPlay.status = Status.STOP
-                        AudioPlay.durChapterIndex = it
-                        AudioPlay.durPageIndex = 0
-                        AudioPlay.book?.durChapterIndex = AudioPlay.durChapterIndex
-                        viewModel.saveRead()
-                        if (isPlay) {
-                            AudioPlay.play(this)
-                        }
+                        AudioPlay.skipTo(this, it)
                     }
                 }
             }
@@ -200,26 +208,26 @@ class AudioPlayActivity :
         observeEventSticky<Int>(EventBus.AUDIO_STATE) {
             AudioPlay.status = it
             if (it == Status.PLAY) {
-                fab_play_stop.setImageResource(R.drawable.ic_pause_24dp)
+                binding.fabPlayStop.setImageResource(R.drawable.ic_pause_24dp)
             } else {
-                fab_play_stop.setImageResource(R.drawable.ic_play_24dp)
+                binding.fabPlayStop.setImageResource(R.drawable.ic_play_24dp)
             }
         }
         observeEventSticky<String>(EventBus.AUDIO_SUB_TITLE) {
-            tv_sub_title.text = it
+            binding.tvSubTitle.text = it
         }
         observeEventSticky<Int>(EventBus.AUDIO_SIZE) {
-            player_progress.max = it
-            tv_all_time.text = DateFormatUtils.format(it.toLong(), "mm:ss")
+            binding.playerProgress.max = it
+            binding.tvAllTime.text = progressTimeFormat.format(it.toLong())
         }
         observeEventSticky<Int>(EventBus.AUDIO_PROGRESS) {
-            AudioPlay.durPageIndex = it
-            if (!adjustProgress) player_progress.progress = it
-            tv_dur_time.text = DateFormatUtils.format(it.toLong(), "mm:ss")
+            AudioPlay.durChapterPos = it
+            if (!adjustProgress) binding.playerProgress.progress = it
+            binding.tvDurTime.text = progressTimeFormat.format(it.toLong())
         }
         observeEventSticky<Float>(EventBus.AUDIO_SPEED) {
-            tv_speed.text = String.format("%.1fX", it)
-            tv_speed.visible()
+            binding.tvSpeed.text = String.format("%.1fX", it)
+            binding.tvSpeed.visible()
         }
     }
 

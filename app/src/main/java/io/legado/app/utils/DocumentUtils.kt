@@ -8,6 +8,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.util.*
 
 
+@Suppress("MemberVisibilityCanBePrivate")
 object DocumentUtils {
 
     fun exists(root: DocumentFile, fileName: String, vararg subDirs: String): Boolean {
@@ -87,10 +88,8 @@ object DocumentUtils {
         val docList = arrayListOf<DocItem>()
         var c: Cursor? = null
         try {
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-                uri,
-                DocumentsContract.getDocumentId(uri)
-            )
+            val childrenUri = DocumentsContract
+                .buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
             c = context.contentResolver.query(
                 childrenUri, arrayOf(
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -98,7 +97,7 @@ object DocumentUtils {
                     DocumentsContract.Document.COLUMN_LAST_MODIFIED,
                     DocumentsContract.Document.COLUMN_SIZE,
                     DocumentsContract.Document.COLUMN_MIME_TYPE
-                ), null, null, null
+                ), null, null, DocumentsContract.Document.COLUMN_DISPLAY_NAME
             )
             c?.let {
                 val ici = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
@@ -106,17 +105,18 @@ object DocumentUtils {
                 val sci = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                 val mci = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 val dci = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                c.moveToFirst()
-                do {
-                    val item = DocItem(
-                        name = c.getString(nci),
-                        attr = c.getString(mci),
-                        size = c.getLong(sci),
-                        date = Date(c.getLong(dci)),
-                        uri = DocumentsContract.buildDocumentUriUsingTree(uri, c.getString(ici))
-                    )
-                    docList.add(item)
-                } while (c.moveToNext())
+                if (c.moveToFirst()) {
+                    do {
+                        val item = DocItem(
+                            name = c.getString(nci),
+                            attr = c.getString(mci),
+                            size = c.getLong(sci),
+                            date = Date(c.getLong(dci)),
+                            uri = DocumentsContract.buildDocumentUriUsingTree(uri, c.getString(ici))
+                        )
+                        docList.add(item)
+                    } while (c.moveToNext())
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -138,6 +138,8 @@ data class DocItem(
     val isDir: Boolean by lazy {
         DocumentsContract.Document.MIME_TYPE_DIR == attr
     }
+
+    val isContentPath get() = uri.isContentScheme()
 }
 
 @Throws(Exception::class)

@@ -7,17 +7,24 @@ import android.net.Uri
 import androidx.annotation.DrawableRes
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
+import io.legado.app.model.analyzeRule.AnalyzeUrl
+import io.legado.app.utils.isAbsUrl
+import io.legado.app.utils.isContentScheme
 import java.io.File
 
 object ImageLoader {
 
+    /**
+     * 自动判断path类型
+     */
     fun load(context: Context, path: String?): RequestBuilder<Drawable> {
         return when {
             path.isNullOrEmpty() -> Glide.with(context).load(path)
-            path.startsWith("http", true) -> Glide.with(context).load(path)
-            else -> try {
+            path.isAbsUrl() -> Glide.with(context).load(AnalyzeUrl(path).getGlideUrl())
+            path.isContentScheme() -> Glide.with(context).load(Uri.parse(path))
+            else -> kotlin.runCatching {
                 Glide.with(context).load(File(path))
-            } catch (e: Exception) {
+            }.getOrElse {
                 Glide.with(context).load(path)
             }
         }

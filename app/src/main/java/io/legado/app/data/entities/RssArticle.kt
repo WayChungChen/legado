@@ -1,6 +1,11 @@
 package io.legado.app.data.entities
 
 import androidx.room.Entity
+import androidx.room.Ignore
+import io.legado.app.model.analyzeRule.RuleDataInterface
+import io.legado.app.utils.GSON
+import io.legado.app.utils.fromJsonObject
+import kotlinx.parcelize.IgnoredOnParcel
 
 
 @Entity(
@@ -9,6 +14,7 @@ import androidx.room.Entity
 )
 data class RssArticle(
     var origin: String = "",
+    var sort: String = "",
     var title: String = "",
     var order: Long = 0,
     var link: String = "",
@@ -16,33 +22,38 @@ data class RssArticle(
     var description: String? = null,
     var content: String? = null,
     var image: String? = null,
-    var read: Boolean = false
-) {
+    var read: Boolean = false,
+    var variable: String? = null
+) : RuleDataInterface {
 
-    override fun hashCode(): Int {
-        return super.hashCode()
-    }
+    override fun hashCode() = link.hashCode()
 
     override fun equals(other: Any?): Boolean {
-        if (other == null) {
-            return false
-        }
-        if (other is RssArticle) {
-            return origin == other.origin && link == other.link
-        }
-        return false
+        other ?: return false
+        return if (other is RssArticle) origin == other.origin && link == other.link else false
     }
 
-    fun toStar(): RssStar {
-        return RssStar(
-            origin = origin,
-            title = title,
-            starTime = System.currentTimeMillis(),
-            link = link,
-            pubDate = pubDate,
-            description = description,
-            content = content,
-            image = image
-        )
+    @delegate:Transient
+    @delegate:Ignore
+    @IgnoredOnParcel
+    override val variableMap by lazy {
+        GSON.fromJsonObject<HashMap<String, String>>(variable) ?: HashMap()
     }
+
+    override fun putVariable(key: String, value: String) {
+        variableMap[key] = value
+        variable = GSON.toJson(variableMap)
+    }
+
+    fun toStar() = RssStar(
+        origin = origin,
+        sort = sort,
+        title = title,
+        starTime = System.currentTimeMillis(),
+        link = link,
+        pubDate = pubDate,
+        description = description,
+        content = content,
+        image = image
+    )
 }

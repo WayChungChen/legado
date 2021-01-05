@@ -1,9 +1,6 @@
 package io.legado.app.ui.rss.source.edit
 
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Bundle
@@ -13,26 +10,27 @@ import android.view.MenuItem
 import android.view.ViewTreeObserver
 import android.widget.EditText
 import android.widget.PopupWindow
-import androidx.recyclerview.widget.LinearLayoutManager
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppConst
 import io.legado.app.data.entities.RssSource
+import io.legado.app.databinding.ActivityRssSourceEditBinding
+import io.legado.app.help.LocalConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.ATH
 import io.legado.app.ui.qrcode.QrCodeActivity
 import io.legado.app.ui.rss.source.debug.RssSourceDebugActivity
 import io.legado.app.ui.widget.KeyboardToolPop
+import io.legado.app.ui.widget.dialog.TextDialog
 import io.legado.app.utils.GSON
-import io.legado.app.utils.applyTint
 import io.legado.app.utils.getViewModel
+import io.legado.app.utils.sendToClip
 import io.legado.app.utils.shareWithQr
-import kotlinx.android.synthetic.main.activity_rss_source_edit.*
 import org.jetbrains.anko.*
 import kotlin.math.abs
 
 class RssSourceEditActivity :
-    VMBaseActivity<RssSourceEditViewModel>(R.layout.activity_rss_source_edit, false),
+    VMBaseActivity<ActivityRssSourceEditBinding, RssSourceEditViewModel>(false),
     ViewTreeObserver.OnGlobalLayoutListener,
     KeyboardToolPop.CallBack {
 
@@ -42,9 +40,12 @@ class RssSourceEditActivity :
     private val adapter = RssSourceEditAdapter()
     private val sourceEntities: ArrayList<EditEntity> = ArrayList()
 
+    override fun getViewBinding(): ActivityRssSourceEditBinding {
+        return ActivityRssSourceEditBinding.inflate(layoutInflater)
+    }
+
     override val viewModel: RssSourceEditViewModel
         get() = getViewModel(RssSourceEditViewModel::class.java)
-
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         initView()
@@ -53,16 +54,23 @@ class RssSourceEditActivity :
         }
     }
 
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        if (!LocalConfig.ruleHelpVersionIsLast) {
+            showRuleHelp()
+        }
+    }
+
     override fun finish() {
         val source = getRssSource()
-        if (!source.equal(viewModel.rssSource ?: RssSource())) {
+        if (!source.equal(viewModel.rssSource)) {
             alert(R.string.exit) {
                 messageResource = R.string.exit_no_save
                 positiveButton(R.string.yes)
                 negativeButton(R.string.no) {
                     super.finish()
                 }
-            }.show().applyTint()
+            }.show()
         } else {
             super.finish()
         }
@@ -75,6 +83,7 @@ class RssSourceEditActivity :
 
     override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.source_edit, menu)
+        menu.findItem(R.id.menu_login).isVisible = false
         return super.onCompatCreateOptionsMenu(menu)
     }
 
@@ -97,37 +106,32 @@ class RssSourceEditActivity :
                     }
                 }
             }
-            R.id.menu_copy_source -> {
-                GSON.toJson(getRssSource())?.let { sourceStr ->
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(ClipData.newPlainText(null, sourceStr))
-                }
-            }
+            R.id.menu_copy_source -> sendToClip(GSON.toJson(getRssSource()))
             R.id.menu_qr_code_camera -> startActivityForResult<QrCodeActivity>(qrRequestCode)
             R.id.menu_paste_source -> viewModel.pasteSource { upRecyclerView(it) }
-            R.id.menu_share_str -> GSON.toJson(getRssSource())?.let { sourceStr ->
-                share(sourceStr)
-            }
-            R.id.menu_share_qr -> GSON.toJson(getRssSource())?.let { sourceStr ->
-                shareWithQr(getString(R.string.share_rss_source), sourceStr)
-            }
+            R.id.menu_share_str -> share(GSON.toJson(getRssSource()))
+            R.id.menu_share_qr -> shareWithQr(
+                getString(R.string.share_rss_source),
+                GSON.toJson(getRssSource())
+            )
+            R.id.menu_help -> showRuleHelp()
         }
         return super.onCompatOptionsItemSelected(item)
     }
 
     private fun initView() {
-        ATH.applyEdgeEffectColor(recycler_view)
+        ATH.applyEdgeEffectColor(binding.recyclerView)
         mSoftKeyboardTool = KeyboardToolPop(this, AppConst.keyboardToolChars, this)
         window.decorView.viewTreeObserver.addOnGlobalLayoutListener(this)
-        recycler_view.layoutManager = LinearLayoutManager(this)
-        recycler_view.adapter = adapter
+        binding.recyclerView.adapter = adapter
     }
 
     private fun upRecyclerView(rssSource: RssSource? = viewModel.rssSource) {
         rssSource?.let {
-            cb_is_enable.isChecked = rssSource.enabled
-            cb_enable_js.isChecked = rssSource.enableJs
-            cb_enable_base_url.isChecked = rssSource.loadWithBaseUrl
+            binding.cbIsEnable.isChecked = rssSource.enabled
+            binding.cbSingleUrl.isChecked = rssSource.singleUrl
+            binding.cbEnableJs.isChecked = rssSource.enableJs
+            binding.cbEnableBaseUrl.isChecked = rssSource.loadWithBaseUrl
         }
         sourceEntities.clear()
         sourceEntities.apply {
@@ -135,6 +139,7 @@ class RssSourceEditActivity :
             add(EditEntity("sourceUrl", rssSource?.sourceUrl, R.string.source_url))
             add(EditEntity("sourceIcon", rssSource?.sourceIcon, R.string.source_icon))
             add(EditEntity("sourceGroup", rssSource?.sourceGroup, R.string.source_group))
+            add(EditEntity("sortUrl", rssSource?.sortUrl, R.string.sort_url))
             add(EditEntity("ruleArticles", rssSource?.ruleArticles, R.string.r_articles))
             add(EditEntity("ruleNextPage", rssSource?.ruleNextPage, R.string.r_next))
             add(EditEntity("ruleTitle", rssSource?.ruleTitle, R.string.r_title))
@@ -143,22 +148,25 @@ class RssSourceEditActivity :
             add(EditEntity("ruleImage", rssSource?.ruleImage, R.string.r_image))
             add(EditEntity("ruleLink", rssSource?.ruleLink, R.string.r_link))
             add(EditEntity("ruleContent", rssSource?.ruleContent, R.string.r_content))
+            add(EditEntity("style", rssSource?.style, R.string.r_style))
             add(EditEntity("header", rssSource?.header, R.string.source_http_header))
         }
         adapter.editEntities = sourceEntities
     }
 
     private fun getRssSource(): RssSource {
-        val source = viewModel.rssSource?.copy() ?: RssSource()
-        source.enabled = cb_is_enable.isChecked
-        source.enableJs = cb_enable_js.isChecked
-        source.loadWithBaseUrl = cb_enable_base_url.isChecked
+        val source = viewModel.rssSource
+        source.enabled = binding.cbIsEnable.isChecked
+        source.singleUrl = binding.cbSingleUrl.isChecked
+        source.enableJs = binding.cbEnableJs.isChecked
+        source.loadWithBaseUrl = binding.cbEnableBaseUrl.isChecked
         sourceEntities.forEach {
             when (it.key) {
                 "sourceName" -> source.sourceName = it.value ?: ""
                 "sourceUrl" -> source.sourceUrl = it.value ?: ""
                 "sourceIcon" -> source.sourceIcon = it.value ?: ""
                 "sourceGroup" -> source.sourceGroup = it.value
+                "sortUrl" -> source.sortUrl = it.value
                 "ruleArticles" -> source.ruleArticles = it.value
                 "ruleNextPage" -> source.ruleNextPage = it.value
                 "ruleTitle" -> source.ruleTitle = it.value
@@ -167,6 +175,7 @@ class RssSourceEditActivity :
                 "ruleImage" -> source.ruleImage = it.value
                 "ruleLink" -> source.ruleLink = it.value
                 "ruleContent" -> source.ruleContent = it.value
+                "style" -> source.style = it.value
                 "header" -> source.header = it.value
             }
         }
@@ -181,7 +190,7 @@ class RssSourceEditActivity :
         return true
     }
 
-    override fun sendText(text: String) {
+    private fun insertText(text: String) {
         if (text.isBlank()) return
         val view = window.decorView.findFocus()
         if (view is EditText) {
@@ -196,11 +205,40 @@ class RssSourceEditActivity :
         }
     }
 
+    override fun sendText(text: String) {
+        if (text == AppConst.keyboardToolChars[0]) {
+            showHelpDialog()
+        } else {
+            insertText(text)
+        }
+    }
+
+    private fun showHelpDialog() {
+        val items = arrayListOf("插入URL参数", "订阅源教程", "正则教程")
+        selector(getString(R.string.help), items) { _, index ->
+            when (index) {
+                0 -> insertText(AppConst.urlOption)
+                1 -> showRuleHelp()
+                2 -> showRegexHelp()
+            }
+        }
+    }
+
+    private fun showRuleHelp() {
+        val mdText = String(assets.open("help/ruleHelp.md").readBytes())
+        TextDialog.show(supportFragmentManager, mdText, TextDialog.MD)
+    }
+
+    private fun showRegexHelp() {
+        val mdText = String(assets.open("help/regexHelp.md").readBytes())
+        TextDialog.show(supportFragmentManager, mdText, TextDialog.MD)
+    }
+
     private fun showKeyboardTopPopupWindow() {
         mSoftKeyboardTool?.let {
             if (it.isShowing) return
             if (!isFinishing) {
-                it.showAtLocation(ll_content, Gravity.BOTTOM, 0, 0)
+                it.showAtLocation(binding.root, Gravity.BOTTOM, 0, 0)
             }
         }
     }
@@ -218,11 +256,11 @@ class RssSourceEditActivity :
         val preShowing = mIsSoftKeyBoardShowing
         if (abs(keyboardHeight) > screenHeight / 5) {
             mIsSoftKeyBoardShowing = true // 超过屏幕五分之一则表示弹出了输入法
-            recycler_view.setPadding(0, 0, 0, 100)
+            binding.recyclerView.setPadding(0, 0, 0, 100)
             showKeyboardTopPopupWindow()
         } else {
             mIsSoftKeyBoardShowing = false
-            recycler_view.setPadding(0, 0, 0, 0)
+            binding.recyclerView.setPadding(0, 0, 0, 0)
             if (preShowing) {
                 closePopupWindow()
             }

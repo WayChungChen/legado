@@ -9,7 +9,7 @@ import io.legado.app.App
 import io.legado.app.R
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.ui.book.read.page.ChapterProvider
+import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.utils.*
 import java.io.File
 
@@ -18,21 +18,30 @@ import java.io.File
  */
 @Keep
 object ReadBookConfig {
-    const val readConfigFileName = "readConfig.json"
-    private val configFilePath =
-        App.INSTANCE.filesDir.absolutePath + File.separator + readConfigFileName
+    const val configFileName = "readConfig.json"
+    const val shareConfigFileName = "shareReadConfig.json"
+    val context get() = App.INSTANCE
+    val configFilePath = FileUtils.getPath(context.filesDir, configFileName)
+    val shareConfigFilePath = FileUtils.getPath(context.filesDir, shareConfigFileName)
     val configList: ArrayList<Config> = arrayListOf()
-    private val defaultConfigs by lazy {
-        val json = String(App.INSTANCE.assets.open(readConfigFileName).readBytes())
-        GSON.fromJsonArray<Config>(json)!!
-    }
-    val durConfig get() = getConfig(styleSelect)
-    private val shareConfig get() = getConfig(5)
+    lateinit var shareConfig: Config
+    var durConfig
+        get() = getConfig(styleSelect)
+        set(value) {
+            configList[styleSelect] = value
+            if (shareLayout) {
+                shareConfig = value
+            }
+            upBg()
+        }
+
     var bg: Drawable? = null
     var bgMeanColor: Int = 0
+    val textColor: Int get() = durConfig.curTextColor()
 
     init {
-        upConfig()
+        initConfigs()
+        initShareConfig()
     }
 
     @Synchronized
@@ -40,37 +49,46 @@ object ReadBookConfig {
         if (configList.size < 5) {
             resetAll()
         }
-        if (configList.size < 6) {
-            configList.add(Config())
-        }
-        return configList[index]
+        return configList.getOrNull(index) ?: configList[0]
     }
 
-    fun upConfig() {
-        (getConfigs() ?: defaultConfigs).let {
+    fun initConfigs() {
+        val configFile = File(configFilePath)
+        var configs: List<Config>? = null
+        if (configFile.exists()) {
+            try {
+                val json = configFile.readText()
+                configs = GSON.fromJsonArray(json)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        (configs ?: DefaultData.readConfigs).let {
             configList.clear()
             configList.addAll(it)
         }
     }
 
-    private fun getConfigs(): List<Config>? {
-        val configFile = File(configFilePath)
+    fun initShareConfig() {
+        val configFile = File(shareConfigFilePath)
+        var c: Config? = null
         if (configFile.exists()) {
             try {
                 val json = configFile.readText()
-                return GSON.fromJsonArray(json)
+                c = GSON.fromJsonObject(json)
             } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
-        return null
+        shareConfig = c ?: configList.getOrNull(5) ?: Config()
     }
 
     fun upBg() {
-        val resources = App.INSTANCE.resources
+        val resources = context.resources
         val dm = resources.displayMetrics
         val width = dm.widthPixels
         val height = dm.heightPixels
-        bg = durConfig.bgDrawable(width, height).apply {
+        bg = durConfig.curBgDrawable(width, height).apply {
             if (this is BitmapDrawable) {
                 bgMeanColor = BitmapUtils.getMeanColor(bitmap)
             } else if (this is ColorDrawable) {
@@ -81,22 +99,33 @@ object ReadBookConfig {
 
     fun save() {
         Coroutine.async {
-            val json = GSON.toJson(configList)
-            FileUtils.createFileIfNotExist(configFilePath).writeText(json)
+            synchronized(this) {
+                GSON.toJson(configList).let {
+                    FileUtils.deleteFile(configFilePath)
+                    FileUtils.createFileIfNotExist(configFilePath).writeText(it)
+                }
+                GSON.toJson(shareConfig).let {
+                    FileUtils.deleteFile(shareConfigFilePath)
+                    FileUtils.createFileIfNotExist(shareConfigFilePath).writeText(it)
+                }
+            }
         }
     }
 
-    fun resetDur() {
-        defaultConfigs[styleSelect].let {
-            durConfig.setBg(it.bgType(), it.bgStr())
-            durConfig.setTextColor(it.textColor())
+    fun deleteDur(): Boolean {
+        if (configList.size > 5) {
+            configList.removeAt(styleSelect)
+            if (styleSelect > 0) {
+                styleSelect -= 1
+            }
             upBg()
-            save()
+            return true
         }
+        return false
     }
 
     private fun resetAll() {
-        defaultConfigs.let {
+        DefaultData.readConfigs.let {
             configList.clear()
             configList.addAll(it)
             save()
@@ -104,184 +133,256 @@ object ReadBookConfig {
     }
 
     //配置写入读取
-    var styleSelect = App.INSTANCE.getPrefInt(PreferKey.readStyleSelect)
+    var readBodyToLh = context.getPrefBoolean(PreferKey.readBodyToLh, true)
+    var autoReadSpeed = context.getPrefInt(PreferKey.autoReadSpeed, 46)
         set(value) {
             field = value
-            if (App.INSTANCE.getPrefInt(PreferKey.readStyleSelect) != value) {
-                App.INSTANCE.putPrefInt(PreferKey.readStyleSelect, value)
-            }
+            context.putPrefInt(PreferKey.autoReadSpeed, value)
         }
-    var shareLayout = App.INSTANCE.getPrefBoolean(PreferKey.shareLayout)
+    var styleSelect = context.getPrefInt(PreferKey.readStyleSelect)
         set(value) {
             field = value
-            if (App.INSTANCE.getPrefBoolean(PreferKey.shareLayout) != value) {
-                App.INSTANCE.putPrefBoolean(PreferKey.shareLayout, value)
+            if (context.getPrefInt(PreferKey.readStyleSelect) != value) {
+                context.putPrefInt(PreferKey.readStyleSelect, value)
             }
         }
-    var pageAnim = App.INSTANCE.getPrefInt(PreferKey.pageAnim)
+    var shareLayout = context.getPrefBoolean(PreferKey.shareLayout)
         set(value) {
             field = value
-            isScroll = value == 3
-            if (App.INSTANCE.getPrefInt(PreferKey.pageAnim) != value) {
-                App.INSTANCE.putPrefInt(PreferKey.pageAnim, value)
+            if (context.getPrefBoolean(PreferKey.shareLayout) != value) {
+                context.putPrefBoolean(PreferKey.shareLayout, value)
             }
         }
-    var isScroll = pageAnim == 3
-    val clickTurnPage get() = App.INSTANCE.getPrefBoolean(PreferKey.clickTurnPage, true)
-    var bodyIndentCount = App.INSTANCE.getPrefInt(PreferKey.bodyIndent, 2)
+    val textFullJustify get() = context.getPrefBoolean(PreferKey.textFullJustify, true)
+    val textBottomJustify get() = context.getPrefBoolean(PreferKey.textBottomJustify, true)
+    var hideStatusBar = context.getPrefBoolean(PreferKey.hideStatusBar)
+    var hideNavigationBar = context.getPrefBoolean(PreferKey.hideNavigationBar)
+
+    val config get() = if (shareLayout) shareConfig else durConfig
+
+    var pageAnim: Int
+        get() = config.curPageAnim()
         set(value) {
-            field = value
-            bodyIndent = "　".repeat(value)
-            if (App.INSTANCE.getPrefInt(PreferKey.bodyIndent, 2) != value) {
-                App.INSTANCE.putPrefInt(PreferKey.bodyIndent, value)
-            }
+            config.setCurPageAnim(value)
         }
-    var bodyIndent = "　".repeat(bodyIndentCount)
-    var hideStatusBar = App.INSTANCE.getPrefBoolean(PreferKey.hideStatusBar)
-    var hideNavigationBar = App.INSTANCE.getPrefBoolean(PreferKey.hideNavigationBar)
-    var textBold: Boolean
-        get() = if (shareLayout) shareConfig.textBold else durConfig.textBold
-        set(value) = if (shareLayout) shareConfig.textBold = value else durConfig.textBold = value
+
+    var textFont: String
+        get() = config.textFont
+        set(value) {
+            config.textFont = value
+        }
+
+    var textBold: Int
+        get() = config.textBold
+        set(value) {
+            config.textBold = value
+        }
 
     var textSize: Int
-        get() = if (shareLayout) shareConfig.textSize else durConfig.textSize
-        set(value) = if (shareLayout) shareConfig.textSize = value else durConfig.textSize = value
+        get() = config.textSize
+        set(value) {
+            config.textSize = value
+        }
 
     var letterSpacing: Float
-        get() = if (shareLayout) shareConfig.letterSpacing else durConfig.letterSpacing
-        set(value) =
-            if (shareLayout) shareConfig.letterSpacing = value else durConfig.letterSpacing = value
+        get() = config.letterSpacing
+        set(value) {
+            config.letterSpacing = value
+        }
 
     var lineSpacingExtra: Int
-        get() = if (shareLayout) shareConfig.lineSpacingExtra else durConfig.lineSpacingExtra
-        set(value) =
-            if (shareLayout) shareConfig.lineSpacingExtra = value
-            else durConfig.lineSpacingExtra = value
+        get() = config.lineSpacingExtra
+        set(value) {
+            config.lineSpacingExtra = value
+        }
 
     var paragraphSpacing: Int
-        get() = if (shareLayout) shareConfig.paragraphSpacing else durConfig.paragraphSpacing
-        set(value) =
-            if (shareLayout) shareConfig.paragraphSpacing = value
-            else durConfig.paragraphSpacing = value
+        get() = config.paragraphSpacing
+        set(value) {
+            config.paragraphSpacing = value
+        }
 
     var titleMode: Int
-        get() = if (shareLayout) shareConfig.titleMode else durConfig.titleMode
-        set(value) =
-            if (shareLayout) shareConfig.titleMode = value else durConfig.titleMode = value
+        get() = config.titleMode
+        set(value) {
+            config.titleMode = value
+        }
     var titleSize: Int
-        get() = if (shareLayout) shareConfig.titleSize else durConfig.titleSize
-        set(value) =
-            if (shareLayout) shareConfig.titleSize = value else durConfig.titleSize = value
+        get() = config.titleSize
+        set(value) {
+            config.titleSize = value
+        }
+
     var titleTopSpacing: Int
-        get() = if (shareLayout) shareConfig.titleTopSpacing else durConfig.titleTopSpacing
-        set(value) =
-            if (shareLayout) shareConfig.titleTopSpacing = value
-            else durConfig.titleTopSpacing = value
+        get() = config.titleTopSpacing
+        set(value) {
+            config.titleTopSpacing = value
+        }
+
     var titleBottomSpacing: Int
-        get() = if (shareLayout) shareConfig.titleBottomSpacing else durConfig.titleBottomSpacing
-        set(value) =
-            if (shareLayout) shareConfig.titleBottomSpacing = value
-            else durConfig.titleBottomSpacing = value
+        get() = config.titleBottomSpacing
+        set(value) {
+            config.titleBottomSpacing = value
+        }
+
+    var paragraphIndent: String
+        get() = config.paragraphIndent
+        set(value) {
+            config.paragraphIndent = value
+        }
 
     var paddingBottom: Int
-        get() = if (shareLayout) shareConfig.paddingBottom else durConfig.paddingBottom
-        set(value) =
-            if (shareLayout) shareConfig.paddingBottom = value else durConfig.paddingBottom = value
+        get() = config.paddingBottom
+        set(value) {
+            config.paddingBottom = value
+        }
 
     var paddingLeft: Int
-        get() = if (shareLayout) shareConfig.paddingLeft else durConfig.paddingLeft
-        set(value) =
-            if (shareLayout) shareConfig.paddingLeft = value else durConfig.paddingLeft = value
+        get() = config.paddingLeft
+        set(value) {
+            config.paddingLeft = value
+        }
 
     var paddingRight: Int
-        get() = if (shareLayout) shareConfig.paddingRight else durConfig.paddingRight
-        set(value) =
-            if (shareLayout) shareConfig.paddingRight = value else durConfig.paddingRight = value
+        get() = config.paddingRight
+        set(value) {
+            config.paddingRight = value
+        }
 
     var paddingTop: Int
-        get() = if (shareLayout) shareConfig.paddingTop else durConfig.paddingTop
-        set(value) =
-            if (shareLayout) shareConfig.paddingTop = value else durConfig.paddingTop = value
+        get() = config.paddingTop
+        set(value) {
+            config.paddingTop = value
+        }
 
     var headerPaddingBottom: Int
-        get() = if (shareLayout) shareConfig.headerPaddingBottom else durConfig.headerPaddingBottom
-        set(value) =
-            if (shareLayout) shareConfig.headerPaddingBottom = value
-            else durConfig.headerPaddingBottom = value
+        get() = config.headerPaddingBottom
+        set(value) {
+            config.headerPaddingBottom = value
+        }
 
     var headerPaddingLeft: Int
-        get() = if (shareLayout) shareConfig.headerPaddingLeft else durConfig.headerPaddingLeft
-        set(value) =
-            if (shareLayout) shareConfig.headerPaddingLeft = value
-            else durConfig.headerPaddingLeft = value
+        get() = config.headerPaddingLeft
+        set(value) {
+            config.headerPaddingLeft = value
+        }
 
     var headerPaddingRight: Int
-        get() = if (shareLayout) shareConfig.headerPaddingRight else durConfig.headerPaddingRight
-        set(value) =
-            if (shareLayout) shareConfig.headerPaddingRight = value
-            else durConfig.headerPaddingRight = value
+        get() = config.headerPaddingRight
+        set(value) {
+            config.headerPaddingRight = value
+        }
 
     var headerPaddingTop: Int
-        get() = if (shareLayout) shareConfig.headerPaddingTop else durConfig.headerPaddingTop
-        set(value) =
-            if (shareLayout) shareConfig.headerPaddingTop = value
-            else durConfig.headerPaddingTop = value
+        get() = config.headerPaddingTop
+        set(value) {
+            config.headerPaddingTop = value
+        }
 
     var footerPaddingBottom: Int
-        get() = if (shareLayout) shareConfig.footerPaddingBottom else durConfig.footerPaddingBottom
-        set(value) =
-            if (shareLayout) shareConfig.footerPaddingBottom = value
-            else durConfig.footerPaddingBottom = value
+        get() = config.footerPaddingBottom
+        set(value) {
+            config.footerPaddingBottom = value
+        }
 
     var footerPaddingLeft: Int
-        get() = if (shareLayout) shareConfig.footerPaddingLeft else durConfig.footerPaddingLeft
-        set(value) =
-            if (shareLayout) shareConfig.footerPaddingLeft = value
-            else durConfig.footerPaddingLeft = value
+        get() = config.footerPaddingLeft
+        set(value) {
+            config.footerPaddingLeft = value
+        }
 
     var footerPaddingRight: Int
-        get() = if (shareLayout) shareConfig.footerPaddingRight else durConfig.footerPaddingRight
-        set(value) =
-            if (shareLayout) shareConfig.footerPaddingRight = value
-            else durConfig.footerPaddingRight = value
+        get() = config.footerPaddingRight
+        set(value) {
+            config.footerPaddingRight = value
+        }
 
     var footerPaddingTop: Int
-        get() = if (shareLayout) shareConfig.footerPaddingTop else durConfig.footerPaddingTop
-        set(value) =
-            if (shareLayout) shareConfig.footerPaddingTop = value
-            else durConfig.footerPaddingTop = value
+        get() = config.footerPaddingTop
+        set(value) {
+            config.footerPaddingTop = value
+        }
 
     var showHeaderLine: Boolean
-        get() = if (shareLayout) shareConfig.showHeaderLine else durConfig.showHeaderLine
-        set(value) =
-            if (shareLayout) shareConfig.showHeaderLine = value
-            else durConfig.showHeaderLine = value
+        get() = config.showHeaderLine
+        set(value) {
+            config.showHeaderLine = value
+        }
 
     var showFooterLine: Boolean
-        get() = if (shareLayout) shareConfig.showFooterLine else durConfig.showFooterLine
-        set(value) =
-            if (shareLayout) shareConfig.showFooterLine = value
-            else durConfig.showFooterLine = value
+        get() = config.showFooterLine
+        set(value) {
+            config.showFooterLine = value
+        }
+
+    fun getExportConfig(): Config {
+        val exportConfig = GSON.fromJsonObject<Config>(GSON.toJson(durConfig))!!
+        if (shareLayout) {
+            exportConfig.textFont = shareConfig.textFont
+            exportConfig.textBold = shareConfig.textBold
+            exportConfig.textSize = shareConfig.textSize
+            exportConfig.letterSpacing = shareConfig.letterSpacing
+            exportConfig.lineSpacingExtra = shareConfig.lineSpacingExtra
+            exportConfig.paragraphSpacing = shareConfig.paragraphSpacing
+            exportConfig.titleMode = shareConfig.titleMode
+            exportConfig.titleSize = shareConfig.titleSize
+            exportConfig.titleTopSpacing = shareConfig.titleTopSpacing
+            exportConfig.titleBottomSpacing = shareConfig.titleBottomSpacing
+            exportConfig.paddingBottom = shareConfig.paddingBottom
+            exportConfig.paddingLeft = shareConfig.paddingLeft
+            exportConfig.paddingRight = shareConfig.paddingRight
+            exportConfig.paddingTop = shareConfig.paddingTop
+            exportConfig.headerPaddingBottom = shareConfig.headerPaddingBottom
+            exportConfig.headerPaddingLeft = shareConfig.headerPaddingLeft
+            exportConfig.headerPaddingRight = shareConfig.headerPaddingRight
+            exportConfig.headerPaddingTop = shareConfig.headerPaddingTop
+            exportConfig.footerPaddingBottom = shareConfig.footerPaddingBottom
+            exportConfig.footerPaddingLeft = shareConfig.footerPaddingLeft
+            exportConfig.footerPaddingRight = shareConfig.footerPaddingRight
+            exportConfig.footerPaddingTop = shareConfig.footerPaddingTop
+            exportConfig.showHeaderLine = shareConfig.showHeaderLine
+            exportConfig.showFooterLine = shareConfig.showFooterLine
+            exportConfig.tipHeaderLeft = shareConfig.tipHeaderLeft
+            exportConfig.tipHeaderMiddle = shareConfig.tipHeaderMiddle
+            exportConfig.tipHeaderRight = shareConfig.tipHeaderRight
+            exportConfig.tipFooterLeft = shareConfig.tipFooterLeft
+            exportConfig.tipFooterMiddle = shareConfig.tipFooterMiddle
+            exportConfig.tipFooterRight = shareConfig.tipFooterRight
+            exportConfig.tipColor = shareConfig.tipColor
+            exportConfig.headerMode = shareConfig.headerMode
+            exportConfig.footerMode = shareConfig.footerMode
+        }
+        return exportConfig
+    }
 
     @Keep
     class Config(
-        private var bgStr: String = "#EEEEEE",//白天背景
-        private var bgStrNight: String = "#000000",//夜间背景
-        private var bgType: Int = 0,//白天背景类型 0:颜色, 1:assets图片, 2其它图片
-        private var bgTypeNight: Int = 0,//夜间背景类型
+        var name: String = "",
+        var bgStr: String = "#EEEEEE",//白天背景
+        var bgStrNight: String = "#000000",//夜间背景
+        var bgStrEInk: String = "#FFFFFF",
+        var bgType: Int = 0,//白天背景类型 0:颜色, 1:assets图片, 2其它图片
+        var bgTypeNight: Int = 0,//夜间背景类型
+        var bgTypeEInk: Int = 0,
         private var darkStatusIcon: Boolean = true,//白天是否暗色状态栏
         private var darkStatusIconNight: Boolean = false,//晚上是否暗色状态栏
+        private var darkStatusIconEInk: Boolean = true,
         private var textColor: String = "#3E3D3B",//白天文字颜色
         private var textColorNight: String = "#ADADAD",//夜间文字颜色
-        var textBold: Boolean = false,//是否粗体字
+        private var textColorEInk: String = "#000000",
+        private var pageAnim: Int = 0,
+        private var pageAnimEInk: Int = 3,
+        var textFont: String = "",//字体
+        var textBold: Int = 0,//是否粗体字 0:正常, 1:粗体, 2:细体
         var textSize: Int = 20,//文字大小
-        var letterSpacing: Float = 0.5f,//字间距
+        var letterSpacing: Float = 0.1f,//字间距
         var lineSpacingExtra: Int = 12,//行间距
-        var paragraphSpacing: Int = 12,//段距
+        var paragraphSpacing: Int = 2,//段距
         var titleMode: Int = 0,//标题居中
         var titleSize: Int = 0,
         var titleTopSpacing: Int = 0,
         var titleBottomSpacing: Int = 0,
+        var paragraphIndent: String = "　　",//段落缩进
         var paddingBottom: Int = 6,
         var paddingLeft: Int = 16,
         var paddingRight: Int = 16,
@@ -295,70 +396,110 @@ object ReadBookConfig {
         var footerPaddingRight: Int = 16,
         var footerPaddingTop: Int = 6,
         var showHeaderLine: Boolean = false,
-        var showFooterLine: Boolean = true
+        var showFooterLine: Boolean = true,
+        var tipHeaderLeft: Int = ReadTipConfig.time,
+        var tipHeaderMiddle: Int = ReadTipConfig.none,
+        var tipHeaderRight: Int = ReadTipConfig.battery,
+        var tipFooterLeft: Int = ReadTipConfig.chapterTitle,
+        var tipFooterMiddle: Int = ReadTipConfig.none,
+        var tipFooterRight: Int = ReadTipConfig.pageAndTotal,
+        var tipColor: Int = 0,
+        var headerMode: Int = 0,
+        var footerMode: Int = 0
     ) {
-        fun setBg(bgType: Int, bg: String) {
-            if (AppConfig.isNightTheme) {
-                bgTypeNight = bgType
-                bgStrNight = bg
-            } else {
-                this.bgType = bgType
-                bgStr = bg
-            }
-        }
 
-        fun setTextColor(color: Int) {
-            if (AppConfig.isNightTheme) {
-                textColorNight = "#${color.hexString}"
-            } else {
-                textColor = "#${color.hexString}"
+        fun setCurTextColor(color: Int) {
+            when {
+                AppConfig.isEInkMode -> textColorEInk = "#${color.hexString}"
+                AppConfig.isNightTheme -> textColorNight = "#${color.hexString}"
+                else -> textColor = "#${color.hexString}"
             }
             ChapterProvider.upStyle()
         }
 
-        fun setStatusIconDark(isDark: Boolean) {
-            if (AppConfig.isNightTheme) {
-                darkStatusIconNight = isDark
-            } else {
-                darkStatusIcon = isDark
+        fun curTextColor(): Int {
+            return when {
+                AppConfig.isEInkMode -> Color.parseColor(textColorEInk)
+                AppConfig.isNightTheme -> Color.parseColor(textColorNight)
+                else -> Color.parseColor(textColor)
             }
         }
 
-        fun statusIconDark(): Boolean {
-            return if (AppConfig.isNightTheme) {
-                darkStatusIconNight
-            } else {
-                darkStatusIcon
+        fun setCurStatusIconDark(isDark: Boolean) {
+            when {
+                AppConfig.isEInkMode -> darkStatusIconEInk = isDark
+                AppConfig.isNightTheme -> darkStatusIconNight = isDark
+                else -> darkStatusIcon = isDark
             }
         }
 
-        fun textColor(): Int {
-            return if (AppConfig.isNightTheme) Color.parseColor(textColorNight)
-            else Color.parseColor(textColor)
+        fun curStatusIconDark(): Boolean {
+            return when {
+                AppConfig.isEInkMode -> darkStatusIconEInk
+                AppConfig.isNightTheme -> darkStatusIconNight
+                else -> darkStatusIcon
+            }
         }
 
-        fun bgStr(): String {
-            return if (AppConfig.isNightTheme) bgStrNight
-            else bgStr
+        fun setCurPageAnim(anim: Int) {
+            when {
+                AppConfig.isEInkMode -> pageAnimEInk = anim
+                else -> pageAnim = anim
+            }
         }
 
-        fun bgType(): Int {
-            return if (AppConfig.isNightTheme) bgTypeNight
-            else bgType
+        fun curPageAnim(): Int {
+            return when {
+                AppConfig.isEInkMode -> pageAnimEInk
+                else -> pageAnim
+            }
         }
 
-        fun bgDrawable(width: Int, height: Int): Drawable {
+        fun setCurBg(bgType: Int, bg: String) {
+            when {
+                AppConfig.isEInkMode -> {
+                    bgTypeEInk = bgType
+                    bgStrEInk = bg
+                }
+                AppConfig.isNightTheme -> {
+                    bgTypeNight = bgType
+                    bgStrNight = bg
+                }
+                else -> {
+                    this.bgType = bgType
+                    bgStr = bg
+                }
+            }
+        }
+
+        fun curBgStr(): String {
+            return when {
+                AppConfig.isEInkMode -> bgStrEInk
+                AppConfig.isNightTheme -> bgStrNight
+                else -> bgStr
+            }
+        }
+
+        fun curBgType(): Int {
+            return when {
+                AppConfig.isEInkMode -> bgTypeEInk
+                AppConfig.isNightTheme -> bgTypeNight
+                else -> bgType
+            }
+        }
+
+        fun curBgDrawable(width: Int, height: Int): Drawable {
             var bgDrawable: Drawable? = null
-            val resources = App.INSTANCE.resources
+            val resources = context.resources
             try {
-                bgDrawable = when (bgType()) {
-                    0 -> ColorDrawable(Color.parseColor(bgStr()))
+                bgDrawable = when (curBgType()) {
+                    0 -> ColorDrawable(Color.parseColor(curBgStr()))
                     1 -> {
                         BitmapDrawable(
                             resources,
                             BitmapUtils.decodeAssetsBitmap(
-                                App.INSTANCE,
-                                "bg" + File.separator + bgStr(),
+                                context,
+                                "bg" + File.separator + curBgStr(),
                                 width,
                                 height
                             )
@@ -366,13 +507,13 @@ object ReadBookConfig {
                     }
                     else -> BitmapDrawable(
                         resources,
-                        BitmapUtils.decodeBitmap(bgStr(), width, height)
+                        BitmapUtils.decodeBitmap(curBgStr(), width, height)
                     )
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            return bgDrawable ?: ColorDrawable(App.INSTANCE.getCompatColor(R.color.background))
+            return bgDrawable ?: ColorDrawable(context.getCompatColor(R.color.background))
         }
     }
 }

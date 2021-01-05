@@ -1,173 +1,136 @@
 package io.legado.app.ui.book.search
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.MutableLiveData
 import io.legado.app.App
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.SearchKeyword
-import io.legado.app.help.AppConfig
-import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.model.WebBook
+import io.legado.app.model.webBook.SearchBookModel
 import io.legado.app.utils.getPrefBoolean
-import io.legado.app.utils.getPrefString
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.asCoroutineDispatcher
-import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.isActive
 
-class SearchViewModel(application: Application) : BaseViewModel(application) {
-    private var searchPool =
-        Executors.newFixedThreadPool(AppConfig.threadCount).asCoroutineDispatcher()
-    private var task: Coroutine<*>? = null
+class SearchViewModel(application: Application) : BaseViewModel(application),
+    SearchBookModel.CallBack {
+    val handler = Handler(Looper.getMainLooper())
+    private val searchBookModel = SearchBookModel(this, this)
     var isSearchLiveData = MutableLiveData<Boolean>()
     var searchBookLiveData = MutableLiveData<List<SearchBook>>()
     var searchKey: String = ""
-    var searchPage = 1
     var isLoading = false
-    var searchBooks = arrayListOf<SearchBook>()
+    private var searchBooks = arrayListOf<SearchBook>()
+    private var searchID = 0L
+    private var postTime = 0L
+    private val sendRunnable = Runnable { upAdapter() }
 
     /**
      * 开始搜索
      */
     fun search(key: String) {
-        task?.cancel()
-        if (key.isEmpty() && searchKey.isEmpty()) {
-            return
-        } else if (key.isEmpty()) {
-            isLoading = true
-            searchPage++
-        } else if (key.isNotEmpty()) {
-            isLoading = true
-            searchPage = 1
-            searchKey = key
+        if ((searchKey == key) || key.isNotEmpty()) {
+            searchBookModel.cancelSearch()
             searchBooks.clear()
+            searchBookLiveData.postValue(searchBooks)
+            searchID = System.currentTimeMillis()
+            searchKey = key
         }
-        isSearchLiveData.postValue(true)
-        task = execute {
-            val searchGroup = context.getPrefString("searchGroup") ?: ""
-            val bookSourceList = if (searchGroup.isBlank()) {
-                App.db.bookSourceDao().allEnabled
-            } else {
-                App.db.bookSourceDao().getEnabledByGroup(searchGroup)
-            }
-            for (item in bookSourceList) {
-                //task取消时自动取消 by （scope = this@execute）
-                WebBook(item).searchBook(
-                    searchKey,
-                    searchPage,
-                    scope = this@execute,
-                    context = searchPool
-                )
-                    .timeout(30000L)
-                    .onSuccess(IO) {
-                        it?.let { list ->
-                            if (context.getPrefBoolean(PreferKey.precisionSearch)) {
-                                precisionSearch(list)
-                            } else {
-                                App.db.searchBookDao().insert(*list.toTypedArray())
-                                mergeItems(list)
-                            }
-                        }
-                    }
-            }
+        if (searchKey.isEmpty()) {
+            return
         }
+        searchBookModel.search(searchID, searchKey)
+    }
 
-        task?.invokeOnCompletion {
-            isSearchLiveData.postValue(false)
-            isLoading = false
+    @Synchronized
+    private fun upAdapter() {
+        if (System.currentTimeMillis() >= postTime + 500) {
+            handler.removeCallbacks(sendRunnable)
+            postTime = System.currentTimeMillis()
+            searchBookLiveData.postValue(searchBooks)
+        } else {
+            handler.removeCallbacks(sendRunnable)
+            handler.postDelayed(sendRunnable, 500 - System.currentTimeMillis() + postTime)
         }
     }
 
-    /**
-     * 精确搜索处理
-     */
-    private fun precisionSearch(searchBooks: List<SearchBook>) {
-        val books = arrayListOf<SearchBook>()
-        searchBooks.forEach { searchBook ->
-            if (searchBook.name.contains(searchKey, true)
-                || searchBook.author.contains(searchKey, true)
-            ) books.add(searchBook)
-        }
-        App.db.searchBookDao().insert(*books.toTypedArray())
-        mergeItems(books)
+    override fun onSearchStart() {
+        isSearchLiveData.postValue(true)
+        isLoading = true
+    }
+
+    override fun onSearchSuccess(searchBooks: ArrayList<SearchBook>) {
+        val precision = context.getPrefBoolean(PreferKey.precisionSearch)
+        App.db.searchBookDao.insert(*searchBooks.toTypedArray())
+        mergeItems(this, searchBooks, precision)
+    }
+
+    override fun onSearchFinish() {
+        isSearchLiveData.postValue(false)
+        isLoading = false
+    }
+
+    override fun onSearchCancel() {
+        isSearchLiveData.postValue(false)
+        isLoading = false
     }
 
     /**
      * 合并搜索结果并排序
      */
     @Synchronized
-    private fun mergeItems(newDataS: List<SearchBook>) {
+    private fun mergeItems(scope: CoroutineScope, newDataS: List<SearchBook>, precision: Boolean) {
         if (newDataS.isNotEmpty()) {
-            val copyDataS = ArrayList(searchBooks)
-            val searchBooksAdd = ArrayList<SearchBook>()
-            if (copyDataS.size == 0) {
-                copyDataS.addAll(newDataS)
-            } else {
-                //存在
-                newDataS.forEach { item ->
+            val prevData = ArrayList(searchBooks)
+            val precisionData = arrayListOf<SearchBook>()
+            prevData.forEach {
+                if (!scope.isActive) return
+                if (it.name == searchKey || it.author == searchKey) {
+                    precisionData.add(it)
+                }
+            }
+            repeat(precisionData.size) {
+                if (!scope.isActive) return
+                prevData.removeAt(0)
+            }
+            newDataS.forEach { nBook ->
+                if (!scope.isActive) return
+                if (nBook.name == searchKey || nBook.author == searchKey) {
                     var hasSame = false
-                    for (searchBook in copyDataS) {
-                        if (item.name == searchBook.name
-                            && item.author == searchBook.author
-                        ) {
+                    precisionData.forEach { pBook ->
+                        if (!scope.isActive) return
+                        if (pBook.name == nBook.name && pBook.author == nBook.author) {
+                            pBook.addOrigin(nBook.origin)
                             hasSame = true
-                            searchBook.addOrigin(item.bookUrl)
-                            break
                         }
                     }
                     if (!hasSame) {
-                        searchBooksAdd.add(item)
+                        precisionData.add(nBook)
                     }
-                }
-                //添加
-                searchBooksAdd.forEach { item ->
-                    if (searchKey == item.name) {
-                        for ((index, searchBook) in copyDataS.withIndex()) {
-                            if (searchKey != searchBook.name) {
-                                copyDataS.add(index, item)
-                                break
-                            }
+                } else if (!precision) {
+                    var hasSame = false
+                    prevData.forEach { pBook ->
+                        if (!scope.isActive) return
+                        if (pBook.name == nBook.name && pBook.author == nBook.author) {
+                            pBook.addOrigin(nBook.origin)
+                            hasSame = true
                         }
-                    } else if (searchKey == item.author) {
-                        for ((index, searchBook) in copyDataS.withIndex()) {
-                            if (searchKey != searchBook.name && searchKey == searchBook.author) {
-                                copyDataS.add(index, item)
-                                break
-                            }
-                        }
-                    } else {
-                        copyDataS.add(item)
+                    }
+                    if (!hasSame) {
+                        prevData.add(nBook)
                     }
                 }
             }
-            searchBooks.sortWith(Comparator { o1, o2 ->
-                if (o1.name == searchKey && o2.name != searchKey) {
-                    1
-                } else if (o1.name != searchKey && o2.name == searchKey) {
-                    -1
-                } else if (o1.author == searchKey && o2.author != searchKey) {
-                    1
-                } else if (o1.author != searchKey && o2.author == searchKey) {
-                    -1
-                } else if (o1.name == o2.name) {
-                    when {
-                        o1.origins.size > o2.origins.size -> {
-                            1
-                        }
-                        o1.origins.size < o2.origins.size -> {
-                            -1
-                        }
-                        else -> {
-                            0
-                        }
-                    }
-                } else {
-                    0
-                }
-            })
-            searchBooks = copyDataS
-            searchBookLiveData.postValue(copyDataS)
+            if (!scope.isActive) return
+            precisionData.sortByDescending { it.origins.size }
+            if (!scope.isActive) return
+            if (!precision) {
+                precisionData.addAll(prevData)
+            }
+            searchBooks = precisionData
+            upAdapter()
         }
     }
 
@@ -175,7 +138,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
      * 停止搜索
      */
     fun stop() {
-        task?.cancel()
+        searchBookModel.cancelSearch()
     }
 
     /**
@@ -183,7 +146,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
      */
     fun getSearchBook(name: String, author: String, success: ((searchBook: SearchBook?) -> Unit)?) {
         execute {
-            val searchBook = App.db.searchBookDao().getFirstByNameAuthor(name, author)
+            val searchBook = App.db.searchBookDao.getFirstByNameAuthor(name, author)
             success?.invoke(searchBook)
         }
     }
@@ -193,10 +156,10 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
      */
     fun saveSearchKey(key: String) {
         execute {
-            App.db.searchKeywordDao().get(key)?.let {
+            App.db.searchKeywordDao.get(key)?.let {
                 it.usage = it.usage + 1
-                App.db.searchKeywordDao().update(it)
-            } ?: App.db.searchKeywordDao().insert(SearchKeyword(key, 1))
+                App.db.searchKeywordDao.update(it)
+            } ?: App.db.searchKeywordDao.insert(SearchKeyword(key, 1))
         }
     }
 
@@ -205,13 +168,13 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
      */
     fun clearHistory() {
         execute {
-            App.db.searchKeywordDao().deleteAll()
+            App.db.searchKeywordDao.deleteAll()
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        searchPool.close()
+        searchBookModel.close()
     }
 
 }

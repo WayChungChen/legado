@@ -4,38 +4,34 @@ import android.app.Application
 import io.legado.app.App
 import io.legado.app.base.BaseViewModel
 import io.legado.app.data.entities.TxtTocRule
-import io.legado.app.help.http.HttpHelper
-import io.legado.app.model.localBook.AnalyzeTxtFile
+import io.legado.app.help.DefaultData
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
+import rxhttp.wrapper.param.RxHttp
+import rxhttp.wrapper.param.toText
 
 class TocRegexViewModel(application: Application) : BaseViewModel(application) {
 
-    fun saveRule(rule: TxtTocRule, oldRule: TxtTocRule? = null) {
+    fun saveRule(rule: TxtTocRule) {
         execute {
             if (rule.serialNumber < 0) {
-                rule.serialNumber = App.db.txtTocRule().lastOrderNum + 1
+                rule.serialNumber = App.db.txtTocRule.lastOrderNum + 1
             }
-            oldRule?.let {
-                App.db.txtTocRule().delete(oldRule)
-            }
-            App.db.txtTocRule().insert(rule)
+            App.db.txtTocRule.insert(rule)
         }
     }
 
     fun importDefault() {
         execute {
-            AnalyzeTxtFile.getDefaultRules().let {
-                App.db.txtTocRule().insert(*it.toTypedArray())
-            }
+            DefaultData.importDefaultTocRules()
         }
     }
 
     fun importOnLine(url: String, finally: (msg: String) -> Unit) {
         execute {
-            HttpHelper.simpleGetAsync(url)?.let { json ->
+            RxHttp.get(url).toText("utf-8").await().let { json ->
                 GSON.fromJsonArray<TxtTocRule>(json)?.let {
-                    App.db.txtTocRule().insert(*it.toTypedArray())
+                    App.db.txtTocRule.insert(*it.toTypedArray())
                 }
             }
         }.onSuccess {

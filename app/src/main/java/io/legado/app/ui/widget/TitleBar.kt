@@ -2,6 +2,7 @@ package io.legado.app.ui.widget
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.util.AttributeSet
 import android.view.Menu
 import android.view.View
@@ -20,7 +21,11 @@ import org.jetbrains.anko.backgroundColor
 import org.jetbrains.anko.bottomPadding
 import org.jetbrains.anko.topPadding
 
-class TitleBar(context: Context, attrs: AttributeSet?) : AppBarLayout(context, attrs) {
+@Suppress("unused")
+class TitleBar @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : AppBarLayout(context, attrs) {
 
     val toolbar: Toolbar
     val menu: Menu
@@ -44,8 +49,6 @@ class TitleBar(context: Context, attrs: AttributeSet?) : AppBarLayout(context, a
     private val attachToActivity: Boolean
 
     init {
-        inflate(context, R.layout.view_title_bar, this)
-        toolbar = findViewById(R.id.toolbar)
         val a = context.obtainStyledAttributes(
             attrs, R.styleable.TitleBar,
             R.attr.titleBarStyle, 0
@@ -60,6 +63,12 @@ class TitleBar(context: Context, attrs: AttributeSet?) : AppBarLayout(context, a
             a.getText(R.styleable.TitleBar_navigationContentDescription)
         val titleText = a.getString(R.styleable.TitleBar_title)
         val subtitleText = a.getString(R.styleable.TitleBar_subtitle)
+
+        when (a.getInt(R.styleable.TitleBar_themeMode, 0)) {
+            1 -> inflate(context, R.layout.view_title_bar_dark, this)
+            else -> inflate(context, R.layout.view_title_bar, this)
+        }
+        toolbar = findViewById(R.id.toolbar)
 
         toolbar.apply {
             navigationIcon?.let {
@@ -133,23 +142,24 @@ class TitleBar(context: Context, attrs: AttributeSet?) : AppBarLayout(context, a
             }
         }
 
-        if (a.getBoolean(R.styleable.TitleBar_fitStatusBar, true)) {
-            topPadding = context.statusBarHeight
+        if (!isInEditMode) {
+            if (a.getBoolean(R.styleable.TitleBar_fitStatusBar, true)) {
+                topPadding = context.statusBarHeight
+            }
+
+            if (a.getBoolean(R.styleable.TitleBar_fitNavigationBar, false)) {
+                bottomPadding = context.navigationBarHeight
+            }
+
+            backgroundColor = context.primaryColor
+
+            stateListAnimator = null
+            elevation = if (AppConfig.elevation < 0) {
+                context.elevation
+            } else {
+                AppConfig.elevation.toFloat()
+            }
         }
-
-        if (a.getBoolean(R.styleable.TitleBar_fitNavigationBar, false)) {
-            bottomPadding = context.navigationBarHeight
-        }
-
-        backgroundColor = context.primaryColor
-
-        stateListAnimator = null
-        elevation = if (AppConfig.elevation < 0) {
-            context.elevation
-        } else {
-            AppConfig.elevation.toFloat()
-        }
-
         a.recycle()
     }
 
@@ -184,6 +194,15 @@ class TitleBar(context: Context, attrs: AttributeSet?) : AppBarLayout(context, a
 
     fun setSubTitleTextAppearance(@StyleRes resId: Int) {
         toolbar.setSubtitleTextAppearance(context, resId)
+    }
+
+    fun transparent() {
+        elevation = 0f
+        backgroundColor = Color.TRANSPARENT
+    }
+
+    fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, fullScreen: Boolean) {
+        topPadding = if (!isInMultiWindowMode && fullScreen) context.statusBarHeight else 0
     }
 
     private fun attachToActivity() {

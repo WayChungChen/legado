@@ -2,31 +2,28 @@ package io.legado.app.ui.book.read.config
 
 import android.content.DialogInterface
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.fragment.app.DialogFragment
+import android.view.WindowManager
 import io.legado.app.R
+import io.legado.app.base.BaseDialogFragment
 import io.legado.app.constant.EventBus
+import io.legado.app.databinding.DialogReadPaddingBinding
 import io.legado.app.help.ReadBookConfig
-import io.legado.app.ui.book.read.Help
-import io.legado.app.utils.dp
-import io.legado.app.utils.gone
+import io.legado.app.utils.getSize
 import io.legado.app.utils.postEvent
-import io.legado.app.utils.visible
-import kotlinx.android.synthetic.main.dialog_read_padding.*
+import io.legado.app.utils.viewbindingdelegate.viewBinding
 
-class PaddingConfigDialog : DialogFragment() {
+class PaddingConfigDialog : BaseDialogFragment() {
+
+    private val binding by viewBinding(DialogReadPaddingBinding::bind)
 
     override fun onStart() {
         super.onStart()
-        val dm = DisplayMetrics()
-        activity?.let {
-            Help.upSystemUiVisibility(it)
-            it.windowManager?.defaultDisplay?.getMetrics(dm)
-        }
+        val dm = requireActivity().getSize()
         dialog?.window?.let {
+            it.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             val attr = it.attributes
             attr.dimAmount = 0.0f
             it.attributes = attr
@@ -42,8 +39,7 @@ class PaddingConfigDialog : DialogFragment() {
         return inflater.inflate(R.layout.dialog_read_padding, container)
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+    override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         initData()
         initView()
     }
@@ -54,91 +50,84 @@ class PaddingConfigDialog : DialogFragment() {
     }
 
     private fun initData() = ReadBookConfig.apply {
-        if (hideStatusBar) {
-            ll_header_padding.visible()
-            tv_body_padding.setPadding(0, 10.dp, 0, 10.dp)
-        } else {
-            ll_header_padding.gone()
-            tv_body_padding.setPadding(0, 0.dp, 0, 10.dp)
-        }
         //正文
-        dsb_padding_top.progress = paddingTop
-        dsb_padding_bottom.progress = paddingBottom
-        dsb_padding_left.progress = paddingLeft
-        dsb_padding_right.progress = paddingRight
+        binding.dsbPaddingTop.progress = paddingTop
+        binding.dsbPaddingBottom.progress = paddingBottom
+        binding.dsbPaddingLeft.progress = paddingLeft
+        binding.dsbPaddingRight.progress = paddingRight
         //页眉
-        dsb_header_padding_top.progress = headerPaddingTop
-        dsb_header_padding_bottom.progress = headerPaddingBottom
-        dsb_header_padding_left.progress = headerPaddingLeft
-        dsb_header_padding_right.progress = headerPaddingRight
+        binding.dsbHeaderPaddingTop.progress = headerPaddingTop
+        binding.dsbHeaderPaddingBottom.progress = headerPaddingBottom
+        binding.dsbHeaderPaddingLeft.progress = headerPaddingLeft
+        binding.dsbHeaderPaddingRight.progress = headerPaddingRight
         //页脚
-        dsb_footer_padding_top.progress = footerPaddingTop
-        dsb_footer_padding_bottom.progress = footerPaddingBottom
-        dsb_footer_padding_left.progress = footerPaddingLeft
-        dsb_footer_padding_right.progress = footerPaddingRight
-        cb_show_top_line.isChecked = showHeaderLine
-        cb_show_bottom_line.isChecked = showFooterLine
+        binding.dsbFooterPaddingTop.progress = footerPaddingTop
+        binding.dsbFooterPaddingBottom.progress = footerPaddingBottom
+        binding.dsbFooterPaddingLeft.progress = footerPaddingLeft
+        binding.dsbFooterPaddingRight.progress = footerPaddingRight
+        binding.cbShowTopLine.isChecked = showHeaderLine
+        binding.cbShowBottomLine.isChecked = showFooterLine
     }
 
     private fun initView() = with(ReadBookConfig) {
         //正文
-        dsb_padding_top.onChanged = {
+        binding.dsbPaddingTop.onChanged = {
             paddingTop = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_padding_bottom.onChanged = {
+        binding.dsbPaddingBottom.onChanged = {
             paddingBottom = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_padding_left.onChanged = {
+        binding.dsbPaddingLeft.onChanged = {
             paddingLeft = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_padding_right.onChanged = {
+        binding.dsbPaddingRight.onChanged = {
             paddingRight = it
             postEvent(EventBus.UP_CONFIG, true)
         }
         //页眉
-        dsb_header_padding_top.onChanged = {
+        binding.dsbHeaderPaddingTop.onChanged = {
             headerPaddingTop = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_header_padding_bottom.onChanged = {
+        binding.dsbHeaderPaddingBottom.onChanged = {
             headerPaddingBottom = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_header_padding_left.onChanged = {
+        binding.dsbHeaderPaddingLeft.onChanged = {
             headerPaddingLeft = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_header_padding_right.onChanged = {
+        binding.dsbHeaderPaddingRight.onChanged = {
             headerPaddingRight = it
             postEvent(EventBus.UP_CONFIG, true)
         }
         //页脚
-        dsb_footer_padding_top.onChanged = {
+        binding.dsbFooterPaddingTop.onChanged = {
             footerPaddingTop = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_footer_padding_bottom.onChanged = {
+        binding.dsbFooterPaddingBottom.onChanged = {
             footerPaddingBottom = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_footer_padding_left.onChanged = {
+        binding.dsbFooterPaddingLeft.onChanged = {
             footerPaddingLeft = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        dsb_footer_padding_right.onChanged = {
+        binding.dsbFooterPaddingRight.onChanged = {
             footerPaddingRight = it
             postEvent(EventBus.UP_CONFIG, true)
         }
-        cb_show_top_line.onCheckedChangeListener = { cb, isChecked ->
+        binding.cbShowTopLine.onCheckedChangeListener = { cb, isChecked ->
             if (cb.isPressed) {
                 showHeaderLine = isChecked
                 postEvent(EventBus.UP_CONFIG, true)
             }
         }
-        cb_show_bottom_line.onCheckedChangeListener = { cb, isChecked ->
+        binding.cbShowBottomLine.onCheckedChangeListener = { cb, isChecked ->
             if (cb.isPressed) {
                 showFooterLine = isChecked
                 postEvent(EventBus.UP_CONFIG, true)

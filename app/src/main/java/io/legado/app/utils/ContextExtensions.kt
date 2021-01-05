@@ -1,8 +1,10 @@
 @file:Suppress("unused")
+
 package io.legado.app.utils
 
 import android.annotation.SuppressLint
 import android.content.*
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -22,6 +24,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import io.legado.app.BuildConfig
 import io.legado.app.R
 import org.jetbrains.anko.defaultSharedPreferences
+import org.jetbrains.anko.longToast
 import org.jetbrains.anko.toast
 import java.io.File
 import java.io.FileOutputStream
@@ -50,14 +53,13 @@ fun Context.putPrefLong(key: String, value: Long) =
 fun Context.getPrefString(key: String, defValue: String? = null) =
     defaultSharedPreferences.getString(key, defValue)
 
-fun Context.getPrefString(@StringRes keyId: Int, defValue: String? = null) =
-    defaultSharedPreferences.getString(getString(keyId), defValue)
-
-fun Context.putPrefString(key: String, value: String) =
+fun Context.putPrefString(key: String, value: String?) =
     defaultSharedPreferences.edit { putString(key, value) }
 
-fun Context.getPrefStringSet(key: String, defValue: MutableSet<String>? = null) =
-    defaultSharedPreferences.getStringSet(key, defValue)
+fun Context.getPrefStringSet(
+    key: String,
+    defValue: MutableSet<String>? = null
+): MutableSet<String>? = defaultSharedPreferences.getStringSet(key, defValue)
 
 fun Context.putPrefStringSet(key: String, value: MutableSet<String>) =
     defaultSharedPreferences.edit { putStringSet(key, value) }
@@ -80,24 +82,25 @@ val Context.sysScreenOffTime: Int
     get() {
         var screenOffTime = 0
         try {
-            screenOffTime = Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT)
+            screenOffTime =
+                Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT)
         } catch (e: Exception) {
             e.printStackTrace()
         }
         return screenOffTime
-}
+    }
 
 val Context.statusBarHeight: Int
     get() {
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
         return resources.getDimensionPixelSize(resourceId)
-}
+    }
 
 val Context.navigationBarHeight: Int
     get() {
         val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
         return resources.getDimensionPixelSize(resourceId)
-}
+    }
 
 @SuppressLint("SetWorldReadable")
 fun Context.shareWithQr(title: String, text: String) {
@@ -120,7 +123,7 @@ fun Context.shareWithQr(title: String, text: String) {
                 file
             )
             val intent = Intent(Intent.ACTION_SEND)
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.putExtra(Intent.EXTRA_STREAM, contentUri)
             intent.type = "image/png"
             startActivity(Intent.createChooser(intent, title))
@@ -136,7 +139,28 @@ fun Context.sendToClip(text: String) {
     val clipData = ClipData.newPlainText(null, text)
     clipboard?.let {
         clipboard.setPrimaryClip(clipData)
-        toast(R.string.copy_complete)
+        longToast(R.string.copy_complete)
+    }
+}
+
+fun Context.getClipText(): String? {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager?
+    clipboard?.primaryClip?.let {
+        if (it.itemCount > 0) {
+            return it.getItemAt(0).text.toString().trim()
+        }
+    }
+    return null
+}
+
+fun Context.sendMail(mail: String) {
+    try {
+        val intent = Intent(Intent.ACTION_SENDTO)
+        intent.data = Uri.parse("mailto:$mail")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    } catch (e: Exception) {
+        toast(e.localizedMessage ?: "Error")
     }
 }
 
@@ -156,7 +180,13 @@ val Context.sysBattery: Int
         val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         val batteryStatus = registerReceiver(null, iFilter)
         return batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-}
+    }
+
+val Context.externalFilesDir: File
+    get() = this.getExternalFilesDir(null) ?: this.filesDir
+
+val Context.eCacheDir: File
+    get() = this.externalCacheDir ?: this.cacheDir
 
 fun Context.openUrl(url: String) {
     openUrl(Uri.parse(url))
@@ -165,6 +195,7 @@ fun Context.openUrl(url: String) {
 fun Context.openUrl(uri: Uri) {
     val intent = Intent(Intent.ACTION_VIEW)
     intent.data = uri
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     if (intent.resolveActivity(packageManager) != null) {
         try {
             startActivity(intent)
@@ -179,3 +210,15 @@ fun Context.openUrl(uri: Uri) {
         }
     }
 }
+
+val Context.channel: String
+    get() {
+        try {
+            val pm = packageManager
+            val appInfo = pm.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+            return appInfo.metaData.getString("channel") ?: ""
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return ""
+    }

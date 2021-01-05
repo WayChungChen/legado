@@ -8,7 +8,7 @@
 
     <TextView
         android:id="@+id/tv_seek_title"
-        android:layout_width="50dp"
+        android:layout_width="60dp"
         android:layout_height="wrap_content"
         android:singleLine="true"
         android:text="seek"
@@ -21,7 +21,7 @@
         android:contentDescription="@string/reduce"
         android:src="@drawable/ic_remove"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:tint="@color/tv_text_default" />
+        android:tint="@color/primaryText" />
 
     <io.legado.app.lib.theme.view.ATESeekBar
         android:id="@+id/seek_bar"
@@ -38,11 +38,11 @@
         android:contentDescription="@string/plus"
         android:src="@drawable/ic_add"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:tint="@color/tv_text_default" />
+        android:tint="@color/primaryText" />
 
     <TextView
         android:id="@+id/tv_seek_value"
-        android:layout_width="40dp"
+        android:layout_width="60dp"
         android:layout_height="wrap_content"
         android:gravity="right"
         android:singleLine="true"

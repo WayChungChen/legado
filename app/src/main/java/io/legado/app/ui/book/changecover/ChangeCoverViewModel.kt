@@ -2,27 +2,40 @@ package io.legado.app.ui.book.changecover
 
 import android.app.Application
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.MutableLiveData
 import io.legado.app.App
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppPattern
+import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.AppConfig
-import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.model.WebBook
+import io.legado.app.help.coroutine.CompositeCoroutine
+import io.legado.app.model.webBook.WebBook
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
+import kotlin.math.min
 
 class ChangeCoverViewModel(application: Application) : BaseViewModel(application) {
-    private var searchPool =
-        Executors.newFixedThreadPool(AppConfig.threadCount).asCoroutineDispatcher()
+    private val threadCount = AppConfig.threadCount
+    private var searchPool: ExecutorCoroutineDispatcher? = null
+    val handler = Handler(Looper.getMainLooper())
     var name: String = ""
     var author: String = ""
-    private var task: Coroutine<*>? = null
+    private var tasks = CompositeCoroutine()
+    private var bookSourceList = arrayListOf<BookSource>()
     val searchStateData = MutableLiveData<Boolean>()
     val searchBooksLiveData = MutableLiveData<List<SearchBook>>()
-    private val searchBooks = ArrayList<SearchBook>()
+    private val searchBooks = CopyOnWriteArraySet<SearchBook>()
+    private val sendRunnable = Runnable { upAdapter() }
+    private var postTime = 0L
+
+    @Volatile
+    private var searchIndex = -1
 
     fun initData(arguments: Bundle?) {
         arguments?.let { bundle ->
@@ -35,61 +48,102 @@ class ChangeCoverViewModel(application: Application) : BaseViewModel(application
         }
     }
 
+    private fun initSearchPool() {
+        searchPool = Executors.newFixedThreadPool(threadCount).asCoroutineDispatcher()
+        searchIndex = -1
+    }
+
     fun loadDbSearchBook() {
         execute {
-            App.db.searchBookDao().getEnableHasCover(name, author).let {
+            App.db.searchBookDao.getEnableHasCover(name, author).let {
                 searchBooks.addAll(it)
+                searchBooksLiveData.postValue(searchBooks.toList())
                 if (it.size <= 1) {
-                    searchBooksLiveData.postValue(searchBooks)
-                    search()
-                } else {
-                    searchBooksLiveData.postValue(searchBooks)
+                    startSearch()
                 }
             }
         }
     }
 
-    fun search() {
-        task = execute {
+    @Synchronized
+    private fun upAdapter() {
+        if (System.currentTimeMillis() >= postTime + 500) {
+            handler.removeCallbacks(sendRunnable)
+            postTime = System.currentTimeMillis()
+            val books = searchBooks.toList()
+            searchBooksLiveData.postValue(books.sortedBy { it.originOrder })
+        } else {
+            handler.removeCallbacks(sendRunnable)
+            handler.postDelayed(sendRunnable, 500)
+        }
+    }
+
+    private fun startSearch() {
+        execute {
+            bookSourceList.clear()
+            bookSourceList.addAll(App.db.bookSourceDao.allEnabled)
             searchStateData.postValue(true)
-            val bookSourceList = App.db.bookSourceDao().allEnabled
-            for (item in bookSourceList) {
-                //task取消时自动取消 by （scope = this@execute）
-                WebBook(item).searchBook(name, scope = this@execute, context = searchPool)
-                    .timeout(30000L)
-                    .onSuccess(Dispatchers.IO) {
-                        if (it != null && it.isNotEmpty()) {
-                            val searchBook = it[0]
-                            if (searchBook.name == name && searchBook.author == author
-                                && !searchBook.coverUrl.isNullOrEmpty()
-                            ) {
-                                App.db.searchBookDao().insert(searchBook)
-                                if (!searchBooks.contains(searchBook)) {
-                                    searchBooks.add(searchBook)
-                                    searchBooksLiveData.postValue(searchBooks)
-                                }
+            initSearchPool()
+            for (i in 0 until threadCount) {
+                search()
+            }
+        }
+    }
+
+    private fun search() {
+        synchronized(this) {
+            if (searchIndex >= bookSourceList.lastIndex) {
+                return
+            }
+            searchIndex++
+            val source = bookSourceList[searchIndex]
+            val task = WebBook(source)
+                .searchBook(this, name, context = searchPool!!)
+                .timeout(60000L)
+                .onSuccess(Dispatchers.IO) {
+                    if (it.isNotEmpty()) {
+                        val searchBook = it[0]
+                        if (searchBook.name == name && searchBook.author == author
+                            && !searchBook.coverUrl.isNullOrEmpty()
+                        ) {
+                            App.db.searchBookDao.insert(searchBook)
+                            if (!searchBooks.contains(searchBook)) {
+                                searchBooks.add(searchBook)
+                                upAdapter()
                             }
                         }
                     }
-            }
-        }
-
-        task?.invokeOnCompletion {
-            searchStateData.postValue(false)
+                }
+                .onFinally {
+                    synchronized(this) {
+                        if (searchIndex < bookSourceList.lastIndex) {
+                            search()
+                        } else {
+                            searchIndex++
+                        }
+                        if (searchIndex >= bookSourceList.lastIndex + min(bookSourceList.size,
+                                threadCount)
+                        ) {
+                            searchStateData.postValue(false)
+                        }
+                    }
+                }
+            tasks.add(task)
         }
     }
 
     fun stopSearch() {
-        if (task?.isActive == true) {
-            task?.cancel()
+        if (tasks.isEmpty) {
+            startSearch()
         } else {
-            search()
+            tasks.clear()
+            searchStateData.postValue(false)
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        searchPool.close()
+        searchPool?.close()
     }
 
 }

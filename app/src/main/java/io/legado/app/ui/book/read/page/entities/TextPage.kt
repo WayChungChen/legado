@@ -4,9 +4,13 @@ import android.text.Layout
 import android.text.StaticLayout
 import io.legado.app.App
 import io.legado.app.R
-import io.legado.app.ui.book.read.page.ChapterProvider
+import io.legado.app.help.ReadBookConfig
+import io.legado.app.service.help.ReadBook
+import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import java.text.DecimalFormat
+import kotlin.math.min
 
+@Suppress("unused")
 data class TextPage(
     var index: Int = 0,
     var text: String = App.INSTANCE.getString(R.string.data_loading),
@@ -15,12 +19,17 @@ data class TextPage(
     var pageSize: Int = 0,
     var chapterSize: Int = 0,
     var chapterIndex: Int = 0,
-    var height: Float = 0f
+    var height: Float = 0f,
 ) {
 
+    val lineSize get() = textLines.size
+    val charSize get() = text.length
+
     fun upLinesPosition() = ChapterProvider.apply {
+        if (!ReadBookConfig.textBottomJustify) return@apply
         if (textLines.size <= 1) return@apply
-        if (visibleHeight - height > with(textLines.last()) { lineBottom - lineTop }) return@apply
+        if (textLines.last().isImage) return@apply
+        if (visibleHeight - height >= with(textLines.last()) { lineBottom - lineTop }) return@apply
         val surplus = (visibleBottom - textLines.last().lineBottom)
         if (surplus == 0f) return@apply
         height += surplus
@@ -44,12 +53,11 @@ data class TextPage(
             if (y < 0) y = 0f
             for (lineIndex in 0 until layout.lineCount) {
                 val textLine = TextLine()
-                textLine.lineTop = (ChapterProvider.paddingTop + y -
-                        (layout.getLineBottom(lineIndex) - layout.getLineTop(lineIndex)))
-                textLine.lineBase = (ChapterProvider.paddingTop + y -
-                        (layout.getLineBottom(lineIndex) - layout.getLineBaseline(lineIndex)))
+                textLine.lineTop = ChapterProvider.paddingTop + y + layout.getLineTop(lineIndex)
+                textLine.lineBase =
+                    ChapterProvider.paddingTop + y + layout.getLineBaseline(lineIndex)
                 textLine.lineBottom =
-                    textLine.lineBase + ChapterProvider.contentPaint.fontMetrics.descent
+                    ChapterProvider.paddingTop + y + layout.getLineBottom(lineIndex)
                 var x = ChapterProvider.paddingLeft +
                         (ChapterProvider.visibleWidth - layout.getLineMax(lineIndex)) / 2
                 textLine.text =
@@ -117,4 +125,31 @@ data class TextPage(
             return percent
         }
 
+    fun getSelectStartLength(lineIndex: Int, charIndex: Int): Int {
+        var length = 0
+        val maxIndex = min(lineIndex, lineSize)
+        for (index in 0 until maxIndex) {
+            length += textLines[index].charSize
+        }
+        return length + charIndex
+    }
+
+    fun getTextChapter(): TextChapter? {
+        ReadBook.curTextChapter?.let {
+            if (it.position == chapterIndex) {
+                return it
+            }
+        }
+        ReadBook.nextTextChapter?.let {
+            if (it.position == chapterIndex) {
+                return it
+            }
+        }
+        ReadBook.prevTextChapter?.let {
+            if (it.position == chapterIndex) {
+                return it
+            }
+        }
+        return null
+    }
 }

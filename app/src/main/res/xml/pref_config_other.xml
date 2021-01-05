@@ -2,9 +2,19 @@
 <androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <io.legado.app.ui.widget.prefs.NameListPreference
+        android:key="language"
+        android:title="@string/language"
+        android:defaultValue="auto"
+        app:entries="@array/language"
+        app:entryValues="@array/language_value" />
+
     <io.legado.app.ui.widget.prefs.PreferenceCategory
         android:title="@string/main_activity"
-        app:iconSpaceReserved="false">
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="false"
+        app:iconSpaceReserved="false"
+        app:layout="@layout/view_preference_category">
 
         <io.legado.app.ui.widget.prefs.SwitchPreference
             android:defaultValue="false"
@@ -26,30 +36,65 @@
             android:title="@string/show_rss"
             app:iconSpaceReserved="false" />
 
+        <io.legado.app.ui.widget.prefs.Preference
+            android:key="defaultCover"
+            android:title="@string/default_cover"
+            app:allowDividerAbove="false"
+            app:allowDividerBelow="false"
+            app:iconSpaceReserved="false" />
+
     </io.legado.app.ui.widget.prefs.PreferenceCategory>
 
     <io.legado.app.ui.widget.prefs.PreferenceCategory
         android:title="@string/other_setting"
-        app:iconSpaceReserved="false">
+        app:allowDividerBelow="false"
+        app:iconSpaceReserved="false"
+        app:layout="@layout/view_preference_category">
 
-        <Preference
-            android:key="threadCount"
-            android:title="@string/threads_num_title"
+        <io.legado.app.ui.widget.prefs.Preference
+            android:key="userAgent"
+            android:title="UserAgent" />
+
+        <io.legado.app.ui.widget.prefs.SwitchPreference
+            android:defaultValue="true"
+            android:key="preDownload"
+            android:title="@string/pre_download"
+            android:summary="@string/pre_download_s" />
+
+        <io.legado.app.ui.widget.prefs.SwitchPreference
+            android:defaultValue="true"
+            android:key="replaceEnableDefault"
+            android:title="@string/replace_enable_default_t"
+            android:summary="@string/replace_enable_default_s"
             app:iconSpaceReserved="false" />
 
-        <Preference
+        <io.legado.app.ui.widget.prefs.SwitchPreference
+            android:defaultValue="true"
+            android:key="mediaButtonOnExit"
+            android:title="@string/media_button_on_exit_title"
+            android:summary="@string/media_button_on_exit_summary"
+            app:iconSpaceReserved="false" />
+
+        <io.legado.app.ui.widget.prefs.SwitchPreference
+            android:defaultValue="true"
+            android:key="autoClearExpired"
+            android:title="@string/auto_clear_expired"
+            android:summary="@string/auto_clear_expired_summary" />
+
+        <io.legado.app.ui.widget.prefs.Preference
             android:key="webPort"
             android:title="@string/web_port_title"
             app:iconSpaceReserved="false" />
 
-        <Preference
-            android:key="downloadPath"
-            android:title="@string/download_path"
+        <io.legado.app.ui.widget.prefs.Preference
+            android:key="cleanCache"
+            android:title="@string/clear_cache"
+            android:summary="@string/clear_cache_summary"
             app:iconSpaceReserved="false" />
 
-        <Preference
-            android:key="cleanCache"
-            android:title="@string/cleanCache"
+        <io.legado.app.ui.widget.prefs.Preference
+            android:key="threadCount"
+            android:title="@string/threads_num_title"
             app:iconSpaceReserved="false" />
 
         <io.legado.app.ui.widget.prefs.SwitchPreference

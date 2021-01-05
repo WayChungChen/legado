@@ -14,16 +14,21 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
 import com.jaredrummler.android.colorpicker.*
 import io.legado.app.lib.theme.ATH
+import io.legado.app.utils.ColorUtils
 
+@Suppress("MemberVisibilityCanBePrivate", "unused")
 class ColorPreference(context: Context, attrs: AttributeSet) : Preference(context, attrs),
     ColorPickerDialogListener {
+
+    var onSaveColor: ((color: Int) -> Boolean)? = null
 
     private val sizeNormal = 0
     private val sizeLarge = 1
 
     private var onShowDialogListener: OnShowDialogListener? = null
-    private var color = Color.BLACK
+    private var mColor = Color.BLACK
     private var showDialog: Boolean = false
+
     @ColorPickerDialog.DialogType
     private var dialogType: Int = 0
     private var colorShape: Int = 0
@@ -37,10 +42,13 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
 
     init {
         isPersistent = true
+        layoutResource = io.legado.app.R.layout.view_preference
+
         val a = context.obtainStyledAttributes(attrs, R.styleable.ColorPreference)
         showDialog = a.getBoolean(R.styleable.ColorPreference_cpv_showDialog, true)
 
-        dialogType = a.getInt(R.styleable.ColorPreference_cpv_dialogType, ColorPickerDialog.TYPE_PRESETS)
+        dialogType =
+            a.getInt(R.styleable.ColorPreference_cpv_dialogType, ColorPickerDialog.TYPE_PRESETS)
         colorShape = a.getInt(R.styleable.ColorPreference_cpv_colorShape, ColorShape.CIRCLE)
         allowPresets = a.getBoolean(R.styleable.ColorPreference_cpv_allowPresets, true)
         allowCustom = a.getBoolean(R.styleable.ColorPreference_cpv_allowCustom, true)
@@ -48,7 +56,8 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
         showColorShades = a.getBoolean(R.styleable.ColorPreference_cpv_showColorShades, true)
         previewSize = a.getInt(R.styleable.ColorPreference_cpv_previewSize, sizeNormal)
         val presetsResId = a.getResourceId(R.styleable.ColorPreference_cpv_colorPresets, 0)
-        dialogTitle = a.getResourceId(R.styleable.ColorPreference_cpv_dialogTitle, R.string.cpv_default_title)
+        dialogTitle =
+            a.getResourceId(R.styleable.ColorPreference_cpv_dialogTitle, R.string.cpv_default_title)
         presets = if (presetsResId != 0) {
             context.resources.getIntArray(presetsResId)
         } else {
@@ -65,7 +74,7 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
     override fun onClick() {
         super.onClick()
         if (onShowDialogListener != null) {
-            onShowDialogListener!!.onShowColorPickerDialog(title as String, color)
+            onShowDialogListener!!.onShowColorPickerDialog(title as String, mColor)
         } else if (showDialog) {
             val dialog = ColorPickerDialogCompat.newBuilder()
                 .setDialogType(dialogType)
@@ -76,7 +85,7 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
                 .setAllowCustom(allowCustom)
                 .setShowAlphaSlider(showAlphaSlider)
                 .setShowColorShades(showColorShades)
-                .setColor(color)
+                .setColor(mColor)
                 .create()
             dialog.setColorPickerDialogListener(this)
             getActivity().supportFragmentManager
@@ -109,18 +118,23 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
     }
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
+        val v = io.legado.app.ui.widget.prefs.Preference.bindView<ColorPanelView>(
+            context, holder, icon, title, summary, widgetLayoutResource,
+            io.legado.app.R.id.cpv_preference_preview_color_panel, 30, 30
+        )
+        if (v is ColorPanelView) {
+            v.color = mColor
+        }
         super.onBindViewHolder(holder)
-        val preview = holder.itemView.findViewById(R.id.cpv_preference_preview_color_panel) as ColorPanelView
-        preview.color = color
     }
 
     override fun onSetInitialValue(defaultValue: Any?) {
         super.onSetInitialValue(defaultValue)
         if (defaultValue is Int) {
-            color = (defaultValue as Int?)!!
-            persistInt(color)
+            mColor = if (!showAlphaSlider) ColorUtils.withAlpha(defaultValue, 1f) else defaultValue
+            persistInt(mColor)
         } else {
-            color = getPersistedInt(-0x1000000)
+            mColor = getPersistedInt(-0x1000000)
         }
     }
 
@@ -129,6 +143,10 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
     }
 
     override fun onColorSelected(dialogId: Int, @ColorInt color: Int) {
+        //返回值为true时说明已经处理过,不再处理
+        if (onSaveColor?.invoke(color) == true) {
+            return
+        }
         saveValue(color)
     }
 
@@ -142,8 +160,8 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
      * @param color The newly selected color
      */
     fun saveValue(@ColorInt color: Int) {
-        this.color = color
-        persistInt(this.color)
+        mColor = if (showAlphaSlider) color else ColorUtils.withAlpha(color, 1f)
+        persistInt(mColor)
         notifyChanged()
         callChangeListener(color)
     }
@@ -226,17 +244,23 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
         class Builder internal constructor() {
 
             internal var colorPickerDialogListener: ColorPickerDialogListener? = null
+
             @StringRes
             internal var dialogTitle = R.string.cpv_default_title
+
             @StringRes
             internal var presetsButtonText = R.string.cpv_presets
+
             @StringRes
             internal var customButtonText = R.string.cpv_custom
+
             @StringRes
             internal var selectedButtonText = R.string.cpv_select
+
             @DialogType
             internal var dialogType = TYPE_PRESETS
             internal var presets = MATERIAL_COLORS
+
             @ColorInt
             internal var color = Color.BLACK
             internal var dialogId = 0
@@ -244,6 +268,7 @@ class ColorPreference(context: Context, attrs: AttributeSet) : Preference(contex
             internal var allowPresets = true
             internal var allowCustom = true
             internal var showColorShades = true
+
             @ColorShape
             internal var colorShape = ColorShape.CIRCLE
 

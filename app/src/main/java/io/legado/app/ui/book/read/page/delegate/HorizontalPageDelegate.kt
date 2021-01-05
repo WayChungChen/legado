@@ -2,29 +2,30 @@ package io.legado.app.ui.book.read.page.delegate
 
 import android.graphics.Bitmap
 import android.view.MotionEvent
-import io.legado.app.ui.book.read.page.PageView
+import io.legado.app.ui.book.read.page.ReadView
+import io.legado.app.ui.book.read.page.entities.PageDirection
 import io.legado.app.utils.screenshot
 
-abstract class HorizontalPageDelegate(pageView: PageView) : PageDelegate(pageView) {
+abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readView) {
 
     protected var curBitmap: Bitmap? = null
     protected var prevBitmap: Bitmap? = null
     protected var nextBitmap: Bitmap? = null
 
-    override fun setDirection(direction: Direction) {
+    override fun setDirection(direction: PageDirection) {
         super.setDirection(direction)
         setBitmap()
     }
 
     private fun setBitmap() {
         when (mDirection) {
-            Direction.PREV -> {
+            PageDirection.PREV -> {
                 prevBitmap?.recycle()
                 prevBitmap = prevPage.screenshot()
                 curBitmap?.recycle()
                 curBitmap = curPage.screenshot()
             }
-            Direction.NEXT -> {
+            PageDirection.NEXT -> {
                 nextBitmap?.recycle()
                 nextBitmap = nextPage.screenshot()
                 curBitmap?.recycle()
@@ -37,17 +38,15 @@ abstract class HorizontalPageDelegate(pageView: PageView) : PageDelegate(pageVie
     override fun onTouch(event: MotionEvent) {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                abort()
+                abortAnim()
             }
             MotionEvent.ACTION_MOVE -> {
-                if (isTextSelected) {
-                    selectText(event)
-                } else {
-                    onScroll(event)
-                }
+                onScroll(event)
+            }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> {
+                onAnimStart(readView.defaultAnimationSpeed)
             }
         }
-        super.onTouch(event)
     }
 
     private fun onScroll(event: MotionEvent) {
@@ -73,7 +72,7 @@ abstract class HorizontalPageDelegate(pageView: PageView) : PageDelegate(pageVie
             val deltaX = (focusX - startX).toInt()
             val deltaY = (focusY - startY).toInt()
             val distance = deltaX * deltaX + deltaY * deltaY
-            isMoved = distance > slopSquare
+            isMoved = distance > readView.slopSquare
             if (isMoved) {
                 if (sumX - startX > 0) {
                     //如果上一页不存在
@@ -81,39 +80,55 @@ abstract class HorizontalPageDelegate(pageView: PageView) : PageDelegate(pageVie
                         noNext = true
                         return
                     }
-                    setDirection(Direction.PREV)
+                    setDirection(PageDirection.PREV)
                 } else {
                     //如果不存在表示没有下一页了
                     if (!hasNext()) {
                         noNext = true
                         return
                     }
-                    setDirection(Direction.NEXT)
+                    setDirection(PageDirection.NEXT)
                 }
             }
         }
         if (isMoved) {
-            isCancel = if (mDirection == Direction.NEXT) sumX > lastX else sumX < lastX
+            isCancel = if (mDirection == PageDirection.NEXT) sumX > lastX else sumX < lastX
             isRunning = true
             //设置触摸点
-            setTouchPoint(sumX, sumY)
+            readView.setTouchPoint(sumX, sumY)
         }
     }
 
-    override fun nextPageByAnim() {
-        super.nextPageByAnim()
-        if (!hasNext()) return
-        setDirection(Direction.NEXT)
-        setTouchPoint(viewWidth.toFloat(), 0f)
-        onAnimStart()
+    override fun abortAnim() {
+        isStarted = false
+        isMoved = false
+        isRunning = false
+        if (!scroller.isFinished) {
+            readView.isAbortAnim = true
+            scroller.abortAnimation()
+            if (!isCancel) {
+                readView.fillPage(mDirection)
+                readView.invalidate()
+            }
+        } else {
+            readView.isAbortAnim = false
+        }
     }
 
-    override fun prevPageByAnim() {
-        super.prevPageByAnim()
+    override fun nextPageByAnim(animationSpeed: Int) {
+        abortAnim()
+        if (!hasNext()) return
+        setDirection(PageDirection.NEXT)
+        readView.setTouchPoint(viewWidth.toFloat(), 0f, false)
+        onAnimStart(animationSpeed)
+    }
+
+    override fun prevPageByAnim(animationSpeed: Int) {
+        abortAnim()
         if (!hasPrev()) return
-        setDirection(Direction.PREV)
-        setTouchPoint(0f, 0f)
-        onAnimStart()
+        setDirection(PageDirection.PREV)
+        readView.setTouchPoint(0f, 0f)
+        onAnimStart(animationSpeed)
     }
 
     override fun onDestroy() {

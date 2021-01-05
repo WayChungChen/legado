@@ -7,89 +7,50 @@ data class TextChapter(
     val title: String,
     val url: String,
     val pages: List<TextPage>,
-    val pageLines: List<Int>,
-    val pageLengths: List<Int>,
     val chaptersSize: Int
 ) {
+
     fun page(index: Int): TextPage? {
-        if (index >= 0 && index < pages.size) {
-            return pages[index]
-        }
-        return null
+        return pages.getOrNull(index)
     }
 
-    fun lastPage(): TextPage? {
-        if (pages.isNotEmpty()) {
-            return pages[pages.lastIndex]
-        }
-        return null
+    fun getPageByReadPos(readPos: Int): TextPage? {
+        return page(getPageIndexByCharIndex(readPos))
     }
 
-    fun scrollPage(): TextPage? {
-        if (pages.isNotEmpty()) {
-            val stringBuilder = StringBuilder()
-            pages.forEach {
-                stringBuilder.append(it.text)
-            }
-            return TextPage(
-                index = 0, text = stringBuilder.toString(), title = title,
-                pageSize = pages.size, chapterSize = chaptersSize, chapterIndex = position
-            )
-        }
-        return null
-    }
+    val lastPage: TextPage? get() = pages.lastOrNull()
 
-    fun lastIndex(): Int {
-        return pages.size - 1
-    }
+    val lastIndex: Int get() = pages.lastIndex
+
+    val lastReadLength: Int get() = getReadLength(lastIndex)
+
+    val pageSize: Int get() = pages.size
 
     fun isLastIndex(index: Int): Boolean {
         return index >= pages.size - 1
-    }
-
-    fun pageSize(): Int {
-        return pages.size
     }
 
     fun getReadLength(pageIndex: Int): Int {
         var length = 0
         val maxIndex = min(pageIndex, pages.size)
         for (index in 0 until maxIndex) {
-            length += pageLengths[index]
+            length += pages[index].charSize
         }
         return length
     }
 
+    fun getNextPageLength(length: Int): Int {
+        return getReadLength(getPageIndexByCharIndex(length) + 1)
+    }
+
     fun getUnRead(pageIndex: Int): String {
         val stringBuilder = StringBuilder()
-        if (pageIndex < pages.size && pages.isNotEmpty()) {
-            for (index in pageIndex..lastIndex()) {
+        if (pages.isNotEmpty()) {
+            for (index in pageIndex..pages.lastIndex) {
                 stringBuilder.append(pages[index].text)
             }
         }
         return stringBuilder.toString()
-    }
-
-    fun getStartLine(pageIndex: Int): Int {
-        if (pageLines.size > pageIndex) {
-            var lines = 0
-            for (index: Int in 0 until pageIndex) {
-                lines += pageLines[index] + 1
-            }
-            return lines
-        }
-        return 0
-    }
-
-    fun getPageIndex(line: Int): Int {
-        var lines = 0
-        for (pageIndex in pageLines.indices) {
-            lines += pageLines[pageIndex] + 1
-            if (line < lines) {
-                return pageIndex
-            }
-        }
-        return 0
     }
 
     fun getContent(): String {
@@ -99,5 +60,15 @@ data class TextChapter(
         }
         return stringBuilder.toString()
     }
-}
 
+    fun getPageIndexByCharIndex(charIndex: Int): Int {
+        var length = 0
+        pages.forEach {
+            length += it.charSize
+            if (length > charIndex) {
+                return it.index
+            }
+        }
+        return pages.lastIndex
+    }
+}

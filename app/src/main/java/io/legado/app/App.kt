@@ -1,28 +1,29 @@
 package io.legado.app
 
-import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
-import androidx.annotation.RequiresApi
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.multidex.MultiDexApplication
 import com.jeremyliao.liveeventbus.LiveEventBus
+import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppConst.channelIdDownload
 import io.legado.app.constant.AppConst.channelIdReadAloud
 import io.legado.app.constant.AppConst.channelIdWeb
+import io.legado.app.constant.EventBus
 import io.legado.app.data.AppDatabase
-import io.legado.app.help.ActivityHelp
-import io.legado.app.help.AppConfig
-import io.legado.app.help.CrashHandler
-import io.legado.app.help.ReadBookConfig
-import io.legado.app.lib.theme.ThemeStore
-import io.legado.app.utils.getCompatColor
-import io.legado.app.utils.getPrefInt
+import io.legado.app.help.*
+import io.legado.app.help.http.HttpHelper
+import io.legado.app.utils.LanguageUtils
+import io.legado.app.utils.postEvent
+import org.jetbrains.anko.defaultSharedPreferences
+import rxhttp.wrapper.param.RxHttp
 
 @Suppress("DEPRECATION")
-class App : Application() {
+class App : MultiDexApplication() {
 
     companion object {
         @JvmStatic
@@ -32,71 +33,51 @@ class App : Application() {
         @JvmStatic
         lateinit var db: AppDatabase
             private set
-    }
 
-    var versionCode = 0
-    var versionName = ""
+        lateinit var androidId: String
+        var versionCode = 0
+        var versionName = ""
+        var navigationBarHeight = 0
+    }
 
     override fun onCreate() {
         super.onCreate()
         INSTANCE = this
-        CrashHandler().init(this)
+        androidId = Settings.System.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        CrashHandler(this)
+        LanguageUtils.setConfiguration(this)
         db = AppDatabase.createDatabase(INSTANCE)
+        RxHttp.init(HttpHelper.client, BuildConfig.DEBUG)
+        RxHttp.setOnParamAssembly {
+            it.addHeader(AppConst.UA_NAME, AppConfig.userAgent)
+        }
         packageManager.getPackageInfo(packageName, 0)?.let {
             versionCode = it.versionCode
             versionName = it.versionName
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) createChannelId()
+        createNotificationChannels()
         applyDayNight()
-        LiveEventBus
-            .config()
+        LiveEventBus.config()
             .supportBroadcast(this)
             .lifecycleObserverAlwaysActive(true)
             .autoClear(false)
-
         registerActivityLifecycleCallbacks(ActivityHelp)
+        defaultSharedPreferences.registerOnSharedPreferenceChangeListener(AppConfig)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         when (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) {
-            Configuration.UI_MODE_NIGHT_YES, Configuration.UI_MODE_NIGHT_NO -> applyDayNight()
-        }
-    }
-
-    /**
-     * 更新主题
-     */
-    fun applyTheme() {
-        if (AppConfig.isNightTheme) {
-            ThemeStore.editTheme(this)
-                .primaryColor(
-                    getPrefInt("colorPrimaryNight", getCompatColor(R.color.md_blue_grey_600))
-                ).accentColor(
-                    getPrefInt("colorAccentNight", getCompatColor(R.color.md_brown_800))
-                ).backgroundColor(
-                    getPrefInt("colorBackgroundNight", getCompatColor(R.color.shine_color))
-                ).bottomBackground(
-                    getPrefInt("colorBottomBackgroundNight", getCompatColor(R.color.md_grey_850))
-                ).apply()
-        } else {
-            ThemeStore.editTheme(this)
-                .primaryColor(
-                    getPrefInt("colorPrimary", getCompatColor(R.color.md_indigo_800))
-                ).accentColor(
-                    getPrefInt("colorAccent", getCompatColor(R.color.md_red_600))
-                ).backgroundColor(
-                    getPrefInt("colorBackground", getCompatColor(R.color.md_grey_100))
-                ).bottomBackground(
-                    getPrefInt("colorBottomBackground", getCompatColor(R.color.md_grey_200))
-                ).apply()
+            Configuration.UI_MODE_NIGHT_YES,
+            Configuration.UI_MODE_NIGHT_NO -> applyDayNight()
         }
     }
 
     fun applyDayNight() {
         ReadBookConfig.upBg()
-        applyTheme()
+        ThemeConfig.applyTheme(this)
         initNightMode()
+        postEvent(EventBus.RECREATE, "")
     }
 
     private fun initNightMode() {
@@ -112,41 +93,38 @@ class App : Application() {
     /**
      * 创建通知ID
      */
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun createChannelId() {
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.let {
-            //用唯一的ID创建渠道对象
             val downloadChannel = NotificationChannel(
                 channelIdDownload,
-                getString(R.string.download_offline),
+                getString(R.string.action_download),
                 NotificationManager.IMPORTANCE_LOW
-            )
-            //初始化channel
-            downloadChannel.enableLights(false)
-            downloadChannel.enableVibration(false)
-            downloadChannel.setSound(null, null)
+            ).apply {
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
 
-            //用唯一的ID创建渠道对象
             val readAloudChannel = NotificationChannel(
                 channelIdReadAloud,
                 getString(R.string.read_aloud),
                 NotificationManager.IMPORTANCE_LOW
-            )
-            //初始化channel
-            readAloudChannel.enableLights(false)
-            readAloudChannel.enableVibration(false)
-            readAloudChannel.setSound(null, null)
+            ).apply {
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
 
-            //用唯一的ID创建渠道对象
             val webChannel = NotificationChannel(
                 channelIdWeb,
                 getString(R.string.web_service),
                 NotificationManager.IMPORTANCE_LOW
-            )
-            //初始化channel
-            webChannel.enableLights(false)
-            webChannel.enableVibration(false)
-            webChannel.setSound(null, null)
+            ).apply {
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
 
             //向notification manager 提交channel
             it.createNotificationChannels(listOf(downloadChannel, readAloudChannel, webChannel))

@@ -15,14 +15,17 @@ import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppConst
 import io.legado.app.data.entities.RssArticle
 import io.legado.app.data.entities.RssSource
-import io.legado.app.help.http.HttpHelper
-import io.legado.app.model.Rss
+import io.legado.app.data.entities.RssStar
 import io.legado.app.model.analyzeRule.AnalyzeUrl
+import io.legado.app.model.rss.Rss
 import io.legado.app.utils.DocumentUtils
 import io.legado.app.utils.FileUtils
-import io.legado.app.utils.isContentPath
+import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.writeBytes
+import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
+import rxhttp.wrapper.param.RxHttp
+import rxhttp.wrapper.param.toByteArray
 import java.io.File
 import java.util.*
 
@@ -34,7 +37,7 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
     var rssArticle: RssArticle? = null
     val contentLiveData = MutableLiveData<String>()
     val urlLiveData = MutableLiveData<AnalyzeUrl>()
-    var star = false
+    var rssStar: RssStar? = null
     var textToSpeech: TextToSpeech? = null
     private var ttsInitFinish = false
     private var ttsTextList = arrayListOf<String>()
@@ -43,22 +46,35 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
         execute {
             val origin = intent.getStringExtra("origin")
             val link = intent.getStringExtra("link")
-            if (origin != null && link != null) {
-                rssSource = App.db.rssSourceDao().getByKey(origin)
-                star = App.db.rssStarDao().get(origin, link) != null
-                rssArticle = App.db.rssArticleDao().get(origin, link)
-                rssArticle?.let { rssArticle ->
-                    if (!rssArticle.description.isNullOrBlank()) {
-                        contentLiveData.postValue(rssArticle.description)
+            origin?.let {
+                rssSource = App.db.rssSourceDao.getByKey(origin)
+                if (link != null) {
+                    rssStar = App.db.rssStarDao.get(origin, link)
+                    rssArticle = rssStar?.toRssArticle() ?: App.db.rssArticleDao.get(origin, link)
+                    rssArticle?.let { rssArticle ->
+                        if (!rssArticle.description.isNullOrBlank()) {
+                            contentLiveData.postValue(rssArticle.description)
+                        } else {
+                            rssSource?.let {
+                                val ruleContent = it.ruleContent
+                                if (!ruleContent.isNullOrBlank()) {
+                                    loadContent(rssArticle, ruleContent)
+                                } else {
+                                    loadUrl(rssArticle.link, rssArticle.origin)
+                                }
+                            } ?: loadUrl(rssArticle.link, rssArticle.origin)
+                        }
+                    }
+                } else {
+                    val ruleContent = rssSource?.ruleContent
+                    if (ruleContent.isNullOrBlank()) {
+                        loadUrl(origin, origin)
                     } else {
-                        rssSource?.let {
-                            val ruleContent = it.ruleContent
-                            if (!ruleContent.isNullOrBlank()) {
-                                loadContent(rssArticle, ruleContent)
-                            } else {
-                                loadUrl(rssArticle)
-                            }
-                        } ?: loadUrl(rssArticle)
+                        val rssArticle = RssArticle()
+                        rssArticle.origin = origin
+                        rssArticle.link = origin
+                        rssArticle.title = rssSource!!.sourceName
+                        loadContent(rssArticle, ruleContent)
                     }
                 }
             }
@@ -67,10 +83,10 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
         }
     }
 
-    private fun loadUrl(rssArticle: RssArticle) {
+    private fun loadUrl(url: String, baseUrl: String) {
         val analyzeUrl = AnalyzeUrl(
-            rssArticle.link,
-            baseUrl = rssArticle.origin,
+            ruleUrl = url,
+            baseUrl = baseUrl,
             useWebView = true,
             headerMapF = rssSource?.getHeaderMap()
         )
@@ -78,21 +94,26 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
     }
 
     private fun loadContent(rssArticle: RssArticle, ruleContent: String) {
-        Rss.getContent(rssArticle, ruleContent, this)
-            .onSuccess {
-                contentLiveData.postValue(it)
+        Rss.getContent(rssArticle, ruleContent, rssSource, this)
+            .onSuccess(IO) { body ->
+                rssArticle.description = body
+                App.db.rssArticleDao.insert(rssArticle)
+                rssStar?.let {
+                    it.description = body
+                    App.db.rssStarDao.insert(it)
+                }
+                contentLiveData.postValue(body)
             }
     }
 
     fun favorite() {
         execute {
-            rssArticle?.let {
-                if (star) {
-                    App.db.rssStarDao().delete(it.origin, it.link)
-                } else {
-                    App.db.rssStarDao().insert(it.toStar())
-                }
-                star = !star
+            rssStar?.let {
+                App.db.rssStarDao.delete(it.origin, it.link)
+                rssStar = null
+            } ?: rssArticle?.toStar()?.let {
+                App.db.rssStarDao.insert(it)
+                rssStar = it
             }
         }.onSuccess {
             callBack?.upStarMenu()
@@ -104,7 +125,7 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
         execute {
             val fileName = "${AppConst.fileNameFormat.format(Date(System.currentTimeMillis()))}.jpg"
             webData2bitmap(webPic)?.let { biteArray ->
-                if (path.isContentPath()) {
+                if (path.isContentScheme()) {
                     val uri = Uri.parse(path)
                     DocumentFile.fromTreeUri(context, uri)?.let { doc ->
                         DocumentUtils.createFileIfNotExist(doc, fileName)
@@ -124,24 +145,35 @@ class ReadRssViewModel(application: Application) : BaseViewModel(application),
 
     private suspend fun webData2bitmap(data: String): ByteArray? {
         return if (URLUtil.isValidUrl(data)) {
-            HttpHelper.simpleGetByteAsync(data)
+            RxHttp.get(data).toByteArray().await()
         } else {
             Base64.decode(data.split(",").toTypedArray()[1], Base64.DEFAULT)
         }
     }
 
     fun clHtml(content: String): String {
-        return if (content.contains("<style>".toRegex())) {
-            content
-        } else {
-            """
-                <style>
-                    img{max-width:100% !important; width:auto; height:auto;}
-                    video{object-fit:fill; max-width:100% !important; width:auto; height:auto;}
-                    body{word-wrap:break-word; height:auto;max-width: 100%; width:auto;}
-                </style>
-                $content
-            """.trimIndent()
+        return when {
+            !rssSource?.style.isNullOrEmpty() -> {
+                """
+                    <style>
+                        ${rssSource?.style}
+                    </style>
+                    $content
+                """.trimIndent()
+            }
+            content.contains("<style>".toRegex()) -> {
+                content
+            }
+            else -> {
+                """
+                    <style>
+                        img{max-width:100% !important; width:auto; height:auto;}
+                        video{object-fit:fill; max-width:100% !important; width:auto; height:auto;}
+                        body{word-wrap:break-word; height:auto;max-width: 100%; width:auto;}
+                    </style>
+                    $content
+                """.trimIndent()
+            }
         }
     }
 

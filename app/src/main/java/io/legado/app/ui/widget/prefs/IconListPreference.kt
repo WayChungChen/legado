@@ -5,22 +5,24 @@ import android.content.ContextWrapper
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.AttributeSet
-import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceViewHolder
 import androidx.recyclerview.widget.LinearLayoutManager
 import io.legado.app.R
+import io.legado.app.base.BaseDialogFragment
 import io.legado.app.base.adapter.ItemViewHolder
-import io.legado.app.base.adapter.SimpleRecyclerAdapter
+import io.legado.app.base.adapter.RecyclerAdapter
+import io.legado.app.databinding.DialogRecyclerViewBinding
+import io.legado.app.databinding.ItemIconPreferenceBinding
+import io.legado.app.lib.theme.primaryColor
 import io.legado.app.utils.getCompatDrawable
-import kotlinx.android.synthetic.main.dialog_recycler_view.*
-import kotlinx.android.synthetic.main.item_icon_preference.view.*
+import io.legado.app.utils.getSize
+import io.legado.app.utils.viewbindingdelegate.viewBinding
 import org.jetbrains.anko.sdk27.listeners.onClick
 
 
@@ -29,6 +31,7 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
     private val mEntryDrawables = arrayListOf<Drawable?>()
 
     init {
+        layoutResource = R.layout.view_preference
         widgetLayoutResource = R.layout.view_icon
 
         val a = context.theme.obtainStyledAttributes(attrs, R.styleable.IconListPreference, 0, 0)
@@ -52,11 +55,12 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
 
     override fun onBindViewHolder(holder: PreferenceViewHolder?) {
         super.onBindViewHolder(holder)
-        holder?.itemView?.findViewById<ImageView>(R.id.preview)?.let {
+        val v = Preference.bindView<ImageView>(context, holder, icon, title, summary, widgetLayoutResource, R.id.preview, 50, 50)
+        if (v is ImageView) {
             val selectedIndex = findIndexOfValue(value)
             if (selectedIndex >= 0) {
                 val drawable = mEntryDrawables[selectedIndex]
-                it.setImageDrawable(drawable)
+                v.setImageDrawable(drawable)
             }
         }
     }
@@ -107,18 +111,18 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
         return "icon_$key"
     }
 
-    class IconDialog : DialogFragment() {
+    class IconDialog : BaseDialogFragment() {
 
         var onChanged: ((value: String) -> Unit)? = null
         var dialogValue: String? = null
         var dialogEntries: Array<CharSequence>? = null
         var dialogEntryValues: Array<CharSequence>? = null
         var dialogIconNames: Array<CharSequence>? = null
+        private val binding by viewBinding(DialogRecyclerViewBinding::bind)
 
         override fun onStart() {
             super.onStart()
-            val dm = DisplayMetrics()
-            activity?.windowManager?.defaultDisplay?.getMetrics(dm)
+            val dm = requireActivity().getSize()
             dialog?.window?.setLayout(
                 (dm.widthPixels * 0.8).toInt(),
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -133,12 +137,12 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
             return inflater.inflate(R.layout.dialog_recycler_view, container)
         }
 
-        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-            super.onViewCreated(view, savedInstanceState)
-            tool_bar.setTitle(R.string.change_icon)
-            recycler_view.layoutManager = LinearLayoutManager(requireContext())
+        override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+            binding.toolBar.setBackgroundColor(primaryColor)
+            binding.toolBar.setTitle(R.string.change_icon)
+            binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
             val adapter = Adapter(requireContext())
-            recycler_view.adapter = adapter
+            binding.recyclerView.adapter = adapter
             arguments?.let {
                 dialogValue = it.getString("value")
                 dialogEntries = it.getCharSequenceArray("entries")
@@ -152,14 +156,19 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
 
 
         inner class Adapter(context: Context) :
-            SimpleRecyclerAdapter<CharSequence>(context, R.layout.item_icon_preference) {
+            RecyclerAdapter<CharSequence, ItemIconPreferenceBinding>(context) {
+
+            override fun getViewBinding(parent: ViewGroup): ItemIconPreferenceBinding {
+                return ItemIconPreferenceBinding.inflate(inflater, parent, false)
+            }
 
             override fun convert(
                 holder: ItemViewHolder,
+                binding: ItemIconPreferenceBinding,
                 item: CharSequence,
                 payloads: MutableList<Any>
             ) {
-                with(holder.itemView) {
+                with(binding) {
                     val index = findIndexOfValue(item.toString())
                     dialogEntries?.let {
                         label.text = it[index]
@@ -177,14 +186,17 @@ class IconListPreference(context: Context, attrs: AttributeSet) : ListPreference
                         }
                     }
                     label.isChecked = item.toString() == dialogValue
-                    onClick {
+                    root.onClick {
                         onChanged?.invoke(item.toString())
                         this@IconDialog.dismiss()
                     }
                 }
             }
 
-            override fun registerListener(holder: ItemViewHolder) {
+            override fun registerListener(
+                holder: ItemViewHolder,
+                binding: ItemIconPreferenceBinding
+            ) {
                 holder.itemView.onClick {
                     getItem(holder.layoutPosition)?.let {
                         onChanged?.invoke(it.toString())

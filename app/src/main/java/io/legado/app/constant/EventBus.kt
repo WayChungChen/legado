@@ -3,7 +3,7 @@ package io.legado.app.constant
 object EventBus {
     const val MEDIA_BUTTON = "mediaButton"
     const val RECREATE = "RECREATE"
-    const val UP_BOOK = "sourceDebugLog"
+    const val UP_BOOK = "upBookToc"
     const val ALOUD_STATE = "aloud_state"
     const val TTS_PROGRESS = "ttsStart"
     const val TTS_DS = "ttsDs"
@@ -17,7 +17,11 @@ object EventBus {
     const val AUDIO_SIZE = "audioSize"
     const val AUDIO_SPEED = "audioSpeed"
     const val SHOW_RSS = "showRss"
-    const val WEB_SERVICE_STOP = "webServiceStop"
+    const val WEB_SERVICE = "webService"
     const val UP_DOWNLOAD = "upDownload"
     const val SAVE_CONTENT = "saveContent"
+    const val CHECK_SOURCE = "checkSource"
+    const val CHECK_SOURCE_DONE = "checkSourceDone"
+    const val REPLACE_RULE_SAVE = "replaceRuleSave"
+    const val TIP_COLOR = "tipColor"
 }

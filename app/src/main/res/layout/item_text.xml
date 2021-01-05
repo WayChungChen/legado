@@ -9,6 +9,7 @@
     android:gravity="center"
     android:padding="5dp"
     android:maxLines="1"
-    android:textColor="@color/tv_text_default"
+    android:scrollbars="none"
+    android:textColor="@color/primaryText"
     android:textSize="14sp"
     tools:ignore="UnusedAttribute" />

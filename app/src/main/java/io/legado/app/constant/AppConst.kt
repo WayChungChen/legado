@@ -3,7 +3,6 @@ package io.legado.app.constant
 import android.annotation.SuppressLint
 import io.legado.app.App
 import io.legado.app.R
-import io.legado.app.data.entities.BookGroup
 import java.text.SimpleDateFormat
 import javax.script.ScriptEngine
 import javax.script.ScriptEngineManager
@@ -18,10 +17,6 @@ object AppConst {
     const val channelIdWeb = "channel_web"
 
     const val UA_NAME = "User-Agent"
-
-    val userAgent: String by lazy {
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"
-    }
 
     val SCRIPT_ENGINE: ScriptEngine by lazy {
         ScriptEngineManager().getEngineByName("rhino")
@@ -41,17 +36,37 @@ object AppConst {
 
     val keyboardToolChars: List<String> by lazy {
         arrayListOf(
-            "@", "&", "|", "%", "/", ":", "[", "]", "{", "}", "<", ">", "\\", "$", "#", "!", ".",
-            "href", "src", "textNodes", "xpath", "json", "css", "id", "class", "tag"
+            "❓", "@css:", "<js></js>", "{{}}", "&&", "%%", "||", "//", "$.", "@",
+            "\\", ":", "class", "id", "href", "textNodes", "ownText", "all", "html",
+            "[", "]", "<", ">", "#", "!", ".", "+", "-", "*", "="
         )
     }
 
-    val bookGroupAll = BookGroup(-1, App.INSTANCE.getString(R.string.all))
-    val bookGroupLocal = BookGroup(-2, App.INSTANCE.getString(R.string.local))
-    val bookGroupAudio = BookGroup(-3, App.INSTANCE.getString(R.string.audio))
+    const val bookGroupAllId = -1L
+    const val bookGroupLocalId = -2L
+    const val bookGroupAudioId = -3L
+    const val bookGroupNoneId = -4L
 
     const val notificationIdRead = 1144771
     const val notificationIdAudio = 1144772
     const val notificationIdWeb = 1144773
     const val notificationIdDownload = 1144774
+
+    val urlOption: String by lazy {
+        """
+        ,{
+        "charset": "",
+        "method": "POST",
+        "body": "",
+        "headers": {"User-Agent": ""}
+        }
+        """.trimIndent()
+    }
+
+    val menuViewNames = arrayOf(
+        "com.android.internal.view.menu.ListMenuItemView",
+        "androidx.appcompat.view.menu.ListMenuItemView"
+    )
+
+    val sysElevation = App.INSTANCE.resources.getDimension(R.dimen.design_appbar_elevation).toInt()
 }
